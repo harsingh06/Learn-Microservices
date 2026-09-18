@@ -11,10 +11,10 @@ Resource group: ats-rg (Central India)
 ├── ats-logs                 Log Analytics — container logs land here
 ├── ats-apps-identity        managed identity the apps use to pull from ACR
 ├── ats-env                  Container Apps environment (shared network + domain)
-│   ├── ats-candidate        candidate-service  :8080 → public https URL
-│   ├── ats-job              job-service        :8080 → public https URL
-│   ├── ats-application      application-service:8080 → public https URL
-│   ├── ats-gateway          YARP API gateway   :8080 → the URL the browser calls
+│   ├── atsroutes            rule-based routing (PREVIEW) → THE public API URL
+│   ├── ats-candidate        candidate-service  :8080 → internal-only ingress
+│   ├── ats-job              job-service        :8080 → internal-only ingress
+│   ├── ats-application      application-service:8080 → internal-only ingress
 │   └── ats-webapp           nginx + React      :80   → public https URL
 └── ats-<suffix>-cosmos      Cosmos DB (free tier) — candidates-db / jobs-db / applications-db
 ```
@@ -31,9 +31,12 @@ are deterministic once the environment is up (`https://<app-name>.<env-domain>`)
 so:
 
 1. **Apply #1** (`deploy_apps = false`) creates everything *except* the apps and
-   outputs the future URLs (including `gateway_url`).
-2. `az acr build` builds the images in the cloud, giving the webapp the gateway URL.
-3. **Apply #2** (`deploy_apps = true`) creates the five apps.
+   outputs the future URLs (including `api_url`, the route-config FQDN).
+2. `az acr build` builds the images in the cloud, giving the webapp the API URL.
+3. **Apply #2** (`deploy_apps = true`) creates the four apps + the route config
+   (an `httpRouteConfigs` PREVIEW resource, managed via the azapi provider —
+   if apply fails with an unknown-resource-type error, the preview may not be
+   available in your region yet).
 
 This is a real microservices lesson: infrastructure lifecycle ≠ image lifecycle.
 
@@ -87,7 +90,7 @@ terraform output   # note acr_name and the four *_url values
 > If `apply` fails with a free-tier error, set `free_tier_enabled = false` in
 > `cosmos.tf` (costs a bit more) or delete the other free-tier account.
 
-## 3. Build and push the five images
+## 3. Build and push the four images
 
 `az acr build` uploads the source and builds **in Azure** — local Docker not needed.
 Replace `<acr_name>` and the URLs with your `terraform output` values.
@@ -98,10 +101,9 @@ cd ../..    # back to repo root
 az acr build -r <acr_name> -t candidate-service:v1   src/CandidateService
 az acr build -r <acr_name> -t job-service:v1         src/JobService
 az acr build -r <acr_name> -t application-service:v1 src/ApplicationService
-az acr build -r <acr_name> -t api-gateway:v1         src/ApiGateway
 
 az acr build -r <acr_name> -t webapp:v1 `
-  --build-arg VITE_API_URL=<gateway_url> `
+  --build-arg VITE_API_URL=<api_url> `
   src/WebApp
 ```
 
@@ -115,14 +117,12 @@ az acr build -r <acr_name> -t webapp:v1 `
 > docker build -t <acr_login_server>/candidate-service:v1 src/CandidateService
 > docker build -t <acr_login_server>/job-service:v1 src/JobService
 > docker build -t <acr_login_server>/application-service:v1 src/ApplicationService
-> docker build -t <acr_login_server>/api-gateway:v1 src/ApiGateway
 > docker build -t <acr_login_server>/webapp:v1 `
->   --build-arg VITE_API_URL=<gateway_url> `
+>   --build-arg VITE_API_URL=<api_url> `
 >   src/WebApp
 > docker push <acr_login_server>/candidate-service:v1
 > docker push <acr_login_server>/job-service:v1
 > docker push <acr_login_server>/application-service:v1
-> docker push <acr_login_server>/api-gateway:v1
 > docker push <acr_login_server>/webapp:v1
 > ```
 

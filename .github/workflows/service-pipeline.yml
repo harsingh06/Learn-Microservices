@@ -22,11 +22,6 @@ on:
         description: Deploy to Azure after a green build (push to main only)
         required: true
         type: boolean
-      run-tests:
-        description: Run the tests/<service>.Tests project (gateway has none)
-        required: false
-        type: boolean
-        default: true
 
 jobs:
   build-and-test:
@@ -42,7 +37,6 @@ jobs:
         run: dotnet build src/${{ inputs.service-name }} -c Release
 
       - name: Test
-        if: inputs.run-tests
         run: dotnet test tests/${{ inputs.service-name }}.Tests -c Release
 
   deploy:

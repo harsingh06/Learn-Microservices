@@ -40,25 +40,25 @@ services:
       - candidate-service
       - job-service
 
-  # Single API origin for the browser: routes /api/<resource>/* to the services.
-  gateway:
-    build: src/ApiGateway
+  # LOCAL stand-in for ACA's rule-based routing (in Azure this is the
+  # environment httpRouteConfig, not a container). Single API origin: routes
+  # /api/<resource>/* to the services. Config: local/dev-router/default.conf
+  dev-router:
+    image: nginx:alpine
     ports:
-      - "5104:8080"
-    environment:
-      ReverseProxy__Clusters__candidates__Destinations__primary__Address: http://candidate-service:8080
-      ReverseProxy__Clusters__jobs__Destinations__primary__Address: http://job-service:8080
-      ReverseProxy__Clusters__applications__Destinations__primary__Address: http://application-service:8080
+      - "5104:80"
+    volumes:
+      - ./local/dev-router/default.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - candidate-service
       - job-service
       - application-service
 
-  # Static files only. The browser calls the gateway (baked-in localhost:5104
-  # matches the port mapping above).
+  # Static files only. The browser calls the API origin (baked-in
+  # localhost:5104 matches the dev-router port mapping above).
   webapp:
     build: src/WebApp
     ports:
       - "5100:80"
     depends_on:
-      - gateway
+      - dev-router

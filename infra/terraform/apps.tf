@@ -10,16 +10,21 @@ locals {
   candidate_app_name   = "${var.prefix}-candidate"
   job_app_name         = "${var.prefix}-job"
   application_app_name = "${var.prefix}-application"
-  gateway_app_name     = "${var.prefix}-gateway"
   webapp_app_name      = "${var.prefix}-webapp"
+  # Route config names must match ^[a-z][a-z0-9]*$ (no hyphens).
+  route_config_name = "${var.prefix}routes"
 
   registry = azurerm_container_registry.main.login_server
 
-  candidate_api_url   = "https://${local.candidate_app_name}.${azurerm_container_app_environment.main.default_domain}"
-  job_api_url         = "https://${local.job_app_name}.${azurerm_container_app_environment.main.default_domain}"
-  application_api_url = "https://${local.application_app_name}.${azurerm_container_app_environment.main.default_domain}"
-  gateway_url         = "https://${local.gateway_app_name}.${azurerm_container_app_environment.main.default_domain}"
-  webapp_url          = "https://${local.webapp_app_name}.${azurerm_container_app_environment.main.default_domain}"
+  # The API apps are internal-only: reachable inside the environment on their
+  # *.internal.* FQDNs, and from the internet ONLY via the route config below.
+  candidate_internal_url   = "https://${local.candidate_app_name}.internal.${azurerm_container_app_environment.main.default_domain}"
+  job_internal_url         = "https://${local.job_app_name}.internal.${azurerm_container_app_environment.main.default_domain}"
+  application_internal_url = "https://${local.application_app_name}.internal.${azurerm_container_app_environment.main.default_domain}"
+
+  # Public API entry point (environment-level rule-based routing FQDN).
+  api_url    = "https://${local.route_config_name}.${azurerm_container_app_environment.main.default_domain}"
+  webapp_url = "https://${local.webapp_app_name}.${azurerm_container_app_environment.main.default_domain}"
 }
 
 resource "azurerm_container_app" "candidate" {
@@ -46,7 +51,9 @@ resource "azurerm_container_app" "candidate" {
   }
 
   ingress {
-    external_enabled = true
+    # Internal-only: reachable inside the environment and via the route config,
+    # not on a public FQDN of its own.
+    external_enabled = false
     target_port      = 8080
     traffic_weight {
       latest_revision = true
@@ -109,7 +116,9 @@ resource "azurerm_container_app" "job" {
   }
 
   ingress {
-    external_enabled = true
+    # Internal-only: reachable inside the environment and via the route config,
+    # not on a public FQDN of its own.
+    external_enabled = false
     target_port      = 8080
     traffic_weight {
       latest_revision = true
@@ -172,7 +181,9 @@ resource "azurerm_container_app" "application" {
   }
 
   ingress {
-    external_enabled = true
+    # Internal-only: reachable inside the environment and via the route config,
+    # not on a public FQDN of its own.
+    external_enabled = false
     target_port      = 8080
     traffic_weight {
       latest_revision = true
@@ -198,14 +209,14 @@ resource "azurerm_container_app" "application" {
         name        = "Cosmos__Key"
         secret_name = "cosmos-key"
       }
-      # Sync existence checks go to the other apps' public URLs.
+      # Sync existence checks stay inside the environment (internal FQDNs).
       env {
         name  = "Services__CandidateApi"
-        value = local.candidate_api_url
+        value = local.candidate_internal_url
       }
       env {
         name  = "Services__JobApi"
-        value = local.job_api_url
+        value = local.job_internal_url
       }
     }
   }
@@ -235,68 +246,59 @@ resource "azurerm_container_app_custom_domain" "webapp" {
   }
 }
 
-resource "azurerm_container_app" "gateway" {
+# Rule-based routing (PREVIEW): one environment-level FQDN routes /api/<resource>/*
+# to the owning internal-only app — the platform's replacement for a self-hosted
+# gateway. azurerm has no resource for this yet, hence azapi. Rule order matters:
+# more specific prefixes must come first (ours don't overlap).
+resource "azapi_resource" "api_routes" {
   count = var.deploy_apps ? 1 : 0
 
-  name                         = local.gateway_app_name
-  container_app_environment_id = azurerm_container_app_environment.main.id
-  resource_group_name          = azurerm_resource_group.main.name
-  revision_mode                = "Single"
+  type      = "Microsoft.App/managedEnvironments/httpRouteConfigs@2025-10-02-preview"
+  name      = local.route_config_name
+  parent_id = azurerm_container_app_environment.main.id
 
-  identity {
-    type         = "UserAssigned"
-    identity_ids = [azurerm_user_assigned_identity.apps.id]
-  }
-
-  registry {
-    server   = local.registry
-    identity = azurerm_user_assigned_identity.apps.id
-  }
-
-  ingress {
-    external_enabled = true
-    target_port      = 8080
-    traffic_weight {
-      latest_revision = true
-      percentage      = 100
+  body = {
+    properties = {
+      rules = [
+        {
+          description = "Candidate service"
+          routes = [
+            {
+              match  = { prefix = "/api/candidates" }
+              action = { prefixRewrite = "/candidates" }
+            }
+          ]
+          targets = [{ containerApp = local.candidate_app_name }]
+        },
+        {
+          description = "Job service"
+          routes = [
+            {
+              match  = { prefix = "/api/jobs" }
+              action = { prefixRewrite = "/jobs" }
+            }
+          ]
+          targets = [{ containerApp = local.job_app_name }]
+        },
+        {
+          description = "Application service"
+          routes = [
+            {
+              match  = { prefix = "/api/applications" }
+              action = { prefixRewrite = "/applications" }
+            }
+          ]
+          targets = [{ containerApp = local.application_app_name }]
+        }
+      ]
     }
   }
 
-  template {
-    min_replicas = var.min_replicas
-    max_replicas = 1
-
-    container {
-      name   = "api-gateway"
-      image  = "${local.registry}/api-gateway:${var.image_tag}"
-      cpu    = 0.25
-      memory = "0.5Gi"
-
-      # YARP cluster destinations (public service URLs for now; internal-only
-      # ingress for the APIs is a backlog item).
-      env {
-        name  = "ReverseProxy__Clusters__candidates__Destinations__primary__Address"
-        value = local.candidate_api_url
-      }
-      env {
-        name  = "ReverseProxy__Clusters__jobs__Destinations__primary__Address"
-        value = local.job_api_url
-      }
-      env {
-        name  = "ReverseProxy__Clusters__applications__Destinations__primary__Address"
-        value = local.application_api_url
-      }
-    }
-  }
-
-  # The per-service CI/CD pipelines roll out new images with
-  # `az containerapp update`; Terraform must not revert them on the next apply.
-  # Split of ownership: Terraform owns the app's shape, pipelines own the image.
-  lifecycle {
-    ignore_changes = [template[0].container[0].image]
-  }
-
-  depends_on = [azurerm_role_assignment.acr_pull]
+  depends_on = [
+    azurerm_container_app.candidate,
+    azurerm_container_app.job,
+    azurerm_container_app.application,
+  ]
 }
 
 resource "azurerm_container_app" "webapp" {

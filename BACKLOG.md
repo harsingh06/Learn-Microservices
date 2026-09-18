@@ -31,17 +31,20 @@ Each item notes *why* it was deferred so we remember the trade-off we accepted.
 
 ## Phase 4 — Edge and platform
 
-- [x] **API gateway** — done as a standalone YARP service (`src/ApiGateway`): own
-      container/app/pipeline; routes `/api/<resource>/*` and owns CORS at the edge.
-      (An earlier nginx-proxy-inside-the-webapp variant was rejected and reverted:
-      it mixed frontend and routing responsibilities.) Follow-ups:
-  - [ ] Remove the now-redundant permissive CORS policy from the three services.
-  - [ ] Tighten gateway CORS to the webapp's origin instead of AllowAnyOrigin.
-  - [ ] Flip the API container apps to internal-only ingress so only the gateway
-        (and ApplicationService) can reach them — verify ACA `*.internal.` FQDN
-        + TLS behavior first.
-  - [ ] Gateway test project when it gains real logic (auth, rate limiting).
-  - [ ] Azure API Management in front, as the managed-gateway comparison.
+- [x] **API routing / gateway** — settled on **ACA rule-based routing** (env-level
+      `httpRouteConfigs`, PREVIEW, via azapi in Terraform): one public API FQDN,
+      `/api/<resource>/*` → owning app, API apps internal-only. History: an
+      nginx-proxy-inside-the-webapp was rejected (mixed responsibilities), a
+      standalone YARP gateway was built and then replaced by the platform feature
+      (nothing of ours to run; trade-off: no self-owned edge for cross-cutting
+      concerns). Locally, `local/dev-router` (compose) and Vite's proxy stand in.
+      Follow-ups:
+  - [ ] The preview risk: track rule-based routing to GA; revisit if limits bite.
+  - [ ] Tighten each service's CORS to the webapp origins instead of
+        AllowAnyOrigin (CORS must stay on services — the routing layer adds none).
+  - [ ] Custom domain (e.g. api.harsingh.com) on the route config.
+  - [ ] When auth/rate-limiting arrive: Azure API Management in front, or
+        resurrect the YARP gateway (git history has it: commit `0681f7a`).
 - [ ] **Authentication/authorization** (Entra ID) — after the gateway exists.
 - [x] **Deployment to Azure Container Apps via Terraform** — done, see `infra/terraform/`
       and `DEPLOY.md`. Follow-ups now unlocked:

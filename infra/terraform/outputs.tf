@@ -18,20 +18,21 @@ output "cosmos_endpoint" {
   value = azurerm_cosmosdb_account.main.endpoint
 }
 
-output "candidate_api_url" {
-  value = local.candidate_api_url
+# The single public API entry point (environment rule-based routing FQDN).
+output "api_url" {
+  value = local.api_url
 }
 
-output "job_api_url" {
-  value = local.job_api_url
+output "candidate_internal_url" {
+  value = local.candidate_internal_url
 }
 
-output "application_api_url" {
-  value = local.application_api_url
+output "job_internal_url" {
+  value = local.job_internal_url
 }
 
-output "gateway_url" {
-  value = local.gateway_url
+output "application_internal_url" {
+  value = local.application_internal_url
 }
 
 output "webapp_url" {

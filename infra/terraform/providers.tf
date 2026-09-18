@@ -10,6 +10,12 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.6"
     }
+    # Escape hatch for ARM features azurerm doesn't cover yet — used for the
+    # environment's HTTP route config (rule-based routing, still in preview).
+    azapi = {
+      source  = "Azure/azapi"
+      version = "~> 2.0"
+    }
   }
 
   # Remote state so both your laptop and the GitHub Actions infra pipeline
@@ -27,5 +33,10 @@ provider "azurerm" {
   features {}
 
   # azurerm v4 requires the subscription explicitly (no longer inferred from az cli).
+  subscription_id = var.subscription_id
+}
+
+# Uses the same auth (az cli locally, ARM_*/OIDC env vars in the pipeline).
+provider "azapi" {
   subscription_id = var.subscription_id
 }

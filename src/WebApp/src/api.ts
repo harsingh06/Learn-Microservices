@@ -1,15 +1,17 @@
 import type { ApplicationStatus, Candidate, Job, JobApplication } from './types'
 
-// All API calls go through the API gateway (single origin for API traffic);
-// the gateway routes /api/<resource>/* to the owning service.
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:5104'
+// All API calls hit one base URL with /api/<resource>/* paths. In Azure that's
+// the environment's rule-based-routing FQDN; in docker-compose it's the local
+// dev-router (:5104); under `npm run dev` it's same-origin via Vite's proxy.
+const API_BASE =
+  import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? '' : 'http://localhost:5104')
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   let response: Response
   try {
     response = await fetch(url, init)
   } catch {
-    throw new Error(`Cannot reach ${API_BASE} — is the gateway running?`)
+    throw new Error(`Cannot reach ${API_BASE || 'the API'} — is the stack running?`)
   }
   if (!response.ok) {
     throw new Error(await readErrorMessage(response))
