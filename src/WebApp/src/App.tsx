@@ -8,7 +8,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <nav>
-        <span className="brand">ATS</span>
+        <span className="brand">Learn Microservices</span>
         <NavLink to="/candidates">Candidates</NavLink>
         <NavLink to="/jobs">Jobs</NavLink>
         <NavLink to="/apply">Apply</NavLink>
