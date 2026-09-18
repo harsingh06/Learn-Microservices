@@ -1,0 +1,69 @@
+# The webapp pipeline differs from the services: Node build, and the API URLs
+# are baked into the bundle at image build time (from repo variables).
+name: webapp
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/WebApp/**"
+      - ".github/workflows/webapp.yml"
+  pull_request:
+    paths:
+      - "src/WebApp/**"
+      - ".github/workflows/webapp.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/WebApp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/WebApp/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck and build
+        run: npm run build
+
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push image (tag = commit SHA)
+        run: |
+          az acr login --name ${{ vars.ACR_NAME }}
+          docker build -t ${{ vars.ACR_LOGIN_SERVER }}/webapp:${{ github.sha }} \
+            --build-arg VITE_CANDIDATE_API=${{ vars.CANDIDATE_API_URL }} \
+            --build-arg VITE_JOB_API=${{ vars.JOB_API_URL }} \
+            --build-arg VITE_APPLICATION_API=${{ vars.APPLICATION_API_URL }} \
+            src/WebApp
+          docker push ${{ vars.ACR_LOGIN_SERVER }}/webapp:${{ github.sha }}
+
+      - name: Roll out new revision
+        run: |
+          az containerapp update \
+            --name ats-webapp \
+            --resource-group ${{ vars.RESOURCE_GROUP }} \
+            --image ${{ vars.ACR_LOGIN_SERVER }}/webapp:${{ github.sha }}

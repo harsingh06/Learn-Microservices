@@ -1,0 +1,69 @@
+# Reusable pipeline shared by the three .NET services.
+# Each service's thin workflow calls this with its own names, so a change to
+# one service builds, tests, and deploys ONLY that service.
+name: service-pipeline
+
+on:
+  workflow_call:
+    inputs:
+      service-name:
+        description: Project folder name, e.g. CandidateService
+        required: true
+        type: string
+      image-name:
+        description: ACR repository name, e.g. candidate-service
+        required: true
+        type: string
+      app-name:
+        description: Azure Container App name, e.g. ats-candidate
+        required: true
+        type: string
+      deploy:
+        description: Deploy to Azure after a green build (push to main only)
+        required: true
+        type: boolean
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Build
+        run: dotnet build src/${{ inputs.service-name }} -c Release
+
+      - name: Test
+        run: dotnet test tests/${{ inputs.service-name }}.Tests -c Release
+
+  deploy:
+    needs: build-and-test
+    if: inputs.deploy
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC token for azure/login — no stored credentials
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push image (tag = commit SHA)
+        run: |
+          az acr login --name ${{ vars.ACR_NAME }}
+          docker build -t ${{ vars.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }} src/${{ inputs.service-name }}
+          docker push ${{ vars.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }}
+
+      - name: Roll out new revision
+        run: |
+          az containerapp update \
+            --name ${{ inputs.app-name }} \
+            --resource-group ${{ vars.RESOURCE_GROUP }} \
+            --image ${{ vars.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }}

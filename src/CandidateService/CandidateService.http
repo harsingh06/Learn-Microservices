@@ -1,0 +1,31 @@
+@host = http://localhost:5101
+
+### Create a candidate
+POST {{host}}/candidates
+Content-Type: application/json
+
+{
+  "fullName": "Ada Lovelace",
+  "email": "ada@example.com"
+}
+
+### List all candidates
+GET {{host}}/candidates
+
+### Search candidates by name
+GET {{host}}/candidates?search=ada
+
+### Get a candidate by id (replace the id)
+GET {{host}}/candidates/00000000-0000-0000-0000-000000000000
+
+### Update a candidate (replace the id)
+PUT {{host}}/candidates/00000000-0000-0000-0000-000000000000
+Content-Type: application/json
+
+{
+  "fullName": "Ada King",
+  "email": "ada@example.com"
+}
+
+### Health check
+GET {{host}}/health

@@ -1,0 +1,30 @@
+@host = http://localhost:5102
+
+### Create a job
+POST {{host}}/jobs
+Content-Type: application/json
+
+{
+  "title": "Senior .NET Engineer",
+  "description": "Build microservices on Azure.",
+  "location": "Remote"
+}
+
+### List all jobs
+GET {{host}}/jobs
+
+### Get a job by id (replace the id)
+GET {{host}}/jobs/00000000-0000-0000-0000-000000000000
+
+### Update a job (replace the id)
+PUT {{host}}/jobs/00000000-0000-0000-0000-000000000000
+Content-Type: application/json
+
+{
+  "title": "Staff .NET Engineer",
+  "description": "Build microservices on Azure.",
+  "location": "Hybrid"
+}
+
+### Health check
+GET {{host}}/health

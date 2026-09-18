@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars (git-ignored) and fill in.
+# Get your subscription id with:  az account show --query id -o tsv
+subscription_id = "00000000-0000-0000-0000-000000000000"
+
+# Flip to true AFTER pushing images to ACR (DEPLOY.md step 4).
+deploy_apps = false
+image_tag   = "v1"

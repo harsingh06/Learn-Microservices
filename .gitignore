@@ -1,0 +1,15 @@
+bin/
+obj/
+.claude/
+node_modules/
+dist/
+.vs/
+*.user
+
+# Terraform (keep .terraform.lock.hcl tracked)
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+*.auto.tfvars
+crash.log

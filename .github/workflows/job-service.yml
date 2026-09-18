@@ -1,0 +1,30 @@
+name: job-service
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/JobService/**"
+      - "tests/JobService.Tests/**"
+      - ".github/workflows/job-service.yml"
+      - ".github/workflows/service-pipeline.yml"
+  pull_request:
+    paths:
+      - "src/JobService/**"
+      - "tests/JobService.Tests/**"
+      - ".github/workflows/job-service.yml"
+      - ".github/workflows/service-pipeline.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  pipeline:
+    uses: ./.github/workflows/service-pipeline.yml
+    with:
+      service-name: JobService
+      image-name: job-service
+      app-name: ats-job
+      deploy: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    secrets: inherit

@@ -1,0 +1,52 @@
+services:
+
+  # Azure Cosmos DB emulator (Linux "vnext" preview: light, fast, plain HTTP).
+  # Data Explorer UI: http://localhost:1234
+  cosmos:
+    image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-preview
+    ports:
+      - "8081:8081"
+      - "1234:1234"
+
+  candidate-service:
+    build: src/CandidateService
+    ports:
+      - "5101:8080"
+    environment:
+      Cosmos__Endpoint: http://cosmos:8081
+    depends_on:
+      - cosmos
+
+  job-service:
+    build: src/JobService
+    ports:
+      - "5102:8080"
+    environment:
+      Cosmos__Endpoint: http://cosmos:8081
+    depends_on:
+      - cosmos
+
+  application-service:
+    build: src/ApplicationService
+    ports:
+      - "5103:8080"
+    environment:
+      Cosmos__Endpoint: http://cosmos:8081
+      # Service-to-service calls use the Docker network, not localhost.
+      Services__CandidateApi: http://candidate-service:8080
+      Services__JobApi: http://job-service:8080
+    depends_on:
+      - cosmos
+      - candidate-service
+      - job-service
+
+  # The browser (not the container) calls the APIs, so the baked-in
+  # localhost URLs are correct as long as the ports above stay mapped.
+  webapp:
+    build: src/WebApp
+    ports:
+      - "5100:80"
+    depends_on:
+      - candidate-service
+      - job-service
+      - application-service

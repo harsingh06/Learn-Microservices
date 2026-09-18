@@ -1,0 +1,30 @@
+@host = http://localhost:5103
+
+### Submit an application (replace ids with real candidate/job ids)
+POST {{host}}/applications
+Content-Type: application/json
+
+{
+  "candidateId": "00000000-0000-0000-0000-000000000000",
+  "jobId": "00000000-0000-0000-0000-000000000000"
+}
+
+### List all applications
+GET {{host}}/applications
+
+### List applications for a candidate
+GET {{host}}/applications?candidateId=00000000-0000-0000-0000-000000000000
+
+### List applications for a job
+GET {{host}}/applications?jobId=00000000-0000-0000-0000-000000000000
+
+### Update application status (Submitted -> InReview -> Accepted | Rejected)
+PUT {{host}}/applications/00000000-0000-0000-0000-000000000000/status
+Content-Type: application/json
+
+{
+  "status": "InReview"
+}
+
+### Health check
+GET {{host}}/health

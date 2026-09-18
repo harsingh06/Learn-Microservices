@@ -1,0 +1,67 @@
+# Infrastructure pipeline: only runs when Terraform files change.
+# PRs get a plan (review it in the job log); pushes to main apply.
+# Auth is OIDC via the ARM_* env vars — the azurerm provider and backend
+# pick them up directly, no azure/login step needed.
+name: infra
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/terraform/**"
+      - ".github/workflows/infra.yml"
+  pull_request:
+    paths:
+      - "infra/terraform/**"
+      - ".github/workflows/infra.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_USE_OIDC: "true"
+  TF_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_deploy_apps: "true"
+
+defaults:
+  run:
+    working-directory: infra/terraform
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Init
+        run: terraform init
+
+      - name: Format check
+        run: terraform fmt -check -recursive
+
+      - name: Validate
+        run: terraform validate
+
+      - name: Plan
+        run: terraform plan -no-color
+
+  apply:
+    needs: plan
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Init
+        run: terraform init
+
+      - name: Apply
+        run: terraform apply -auto-approve -no-color
