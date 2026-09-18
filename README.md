@@ -6,12 +6,15 @@ of microservices, Docker, and (later) Azure Container Apps, AKS, and DevOps.
 ## Architecture
 
 ```
-                     ┌─────────────────────┐
-                     │   React WebApp      │  :5100 (Docker) / :5173 (dev)
-                     └──┬───────┬───────┬──┘
-              REST      │       │       │
+   Browser ──► one origin only: :5100 (Docker) / :5173 (dev)
+                     ┌─────────────────────────────┐
+                     │  WebApp (nginx / Vite dev)  │
+                     │  static React bundle        │
+                     │  + reverse proxy  /api/*    │
+                     └──┬───────┬───────┬──────────┘
+     /api/candidates    │       │       │    /api/applications
         ┌───────────────┘       │       └────────────────┐
-        ▼                       ▼                        ▼
+        ▼                /api/jobs ▼                     ▼
 ┌───────────────┐      ┌───────────────┐      ┌─────────────────────┐
 │ Candidate     │      │ Job           │      │ Application         │
 │ Service :5101 │◄─────┤ Service :5102 │◄─────┤ Service :5103       │
@@ -33,9 +36,15 @@ Status workflow (owned entirely by ApplicationService):
 `Submitted → InReview → Accepted | Rejected` (Submitted can also go straight to Rejected).
 
 Key decisions (and their trade-offs) are recorded in [BACKLOG.md](BACKLOG.md) — notably:
-no messaging yet (Service Bus + NotificationWorker are Phase 2), the UI calls services
-directly (no gateway), and ApplicationService validates candidate/job existence with
-synchronous REST calls and snapshots `candidateName`/`jobTitle` into each application.
+no messaging yet (Service Bus + NotificationWorker are Phase 2), and ApplicationService
+validates candidate/job existence with synchronous REST calls and snapshots
+`candidateName`/`jobTitle` into each application.
+
+The browser talks to **one origin**: the webapp serves the React bundle and
+reverse-proxies `/api/<resource>/*` to the owning service (nginx in containers,
+Vite's dev proxy during `npm run dev`). Upstream URLs are runtime configuration
+(env vars), so one webapp image works in every environment — this is a light BFF,
+the first step toward the full gateway on the backlog.
 
 ## Prerequisites
 
@@ -146,7 +155,7 @@ changing one service builds, tests, and deploys only that service:
 |---|---|---|---|
 | `candidate-service.yml` | `src/CandidateService/**` + its tests | build + test | + image → ACR → `az containerapp update` |
 | `job-service.yml` / `application-service.yml` | same pattern | same | same |
-| `webapp.yml` | `src/WebApp/**` | typecheck + build | + image (API URLs from repo variables) → deploy |
+| `webapp.yml` | `src/WebApp/**` | typecheck + build | + image (env-independent, no build args) → deploy |
 | `infra.yml` | `infra/terraform/**` | fmt/validate/plan | terraform apply |
 
 The three service workflows are thin wrappers around the reusable

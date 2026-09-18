@@ -24,17 +24,17 @@ emulator and the compose network. The services themselves are unchanged — only
 
 ## Why the deploy is two `terraform apply` passes
 
-The webapp bakes the API URLs into its JS bundle at **image build time**, but the
-URLs don't exist until the Container Apps environment exists. The trick: app URLs
-are deterministic once the environment is up (`https://<app-name>.<env-domain>`),
-so:
+A container app can't be created until its image exists in ACR — and ACR itself
+is created by Terraform. So:
 
-1. **Apply #1** (`deploy_apps = false`) creates everything *except* the apps and
-   outputs the future URLs.
-2. `az acr build` builds the images in the cloud, giving the webapp those URLs.
+1. **Apply #1** (`deploy_apps = false`) creates everything *except* the apps
+   (registry, environment, Cosmos, identity).
+2. Build and push the four images.
 3. **Apply #2** (`deploy_apps = true`) creates the four apps.
 
 This is a real microservices lesson: infrastructure lifecycle ≠ image lifecycle.
+(The webapp image needs no environment-specific build args: nginx reverse-proxies
+`/api/*` to URLs supplied at runtime via env vars, set by Terraform.)
 
 ## 0. Prerequisites (once)
 
@@ -98,11 +98,7 @@ az acr build -r <acr_name> -t candidate-service:v1   src/CandidateService
 az acr build -r <acr_name> -t job-service:v1         src/JobService
 az acr build -r <acr_name> -t application-service:v1 src/ApplicationService
 
-az acr build -r <acr_name> -t webapp:v1 `
-  --build-arg VITE_CANDIDATE_API=<candidate_api_url> `
-  --build-arg VITE_JOB_API=<job_api_url> `
-  --build-arg VITE_APPLICATION_API=<application_api_url> `
-  src/WebApp
+az acr build -r <acr_name> -t webapp:v1 src/WebApp
 ```
 
 > **`TasksOperationsNotAllowed`?** Microsoft blocks ACR Tasks on free-trial,
@@ -115,11 +111,7 @@ az acr build -r <acr_name> -t webapp:v1 `
 > docker build -t <acr_login_server>/candidate-service:v1 src/CandidateService
 > docker build -t <acr_login_server>/job-service:v1 src/JobService
 > docker build -t <acr_login_server>/application-service:v1 src/ApplicationService
-> docker build -t <acr_login_server>/webapp:v1 `
->   --build-arg VITE_CANDIDATE_API=<candidate_api_url> `
->   --build-arg VITE_JOB_API=<job_api_url> `
->   --build-arg VITE_APPLICATION_API=<application_api_url> `
->   src/WebApp
+> docker build -t <acr_login_server>/webapp:v1 src/WebApp
 > docker push <acr_login_server>/candidate-service:v1
 > docker push <acr_login_server>/job-service:v1
 > docker push <acr_login_server>/application-service:v1

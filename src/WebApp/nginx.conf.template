@@ -1,0 +1,30 @@
+# Reverse proxy + static file server, one origin for the browser.
+# ${...} upstream URLs are injected from environment variables when the
+# container starts (the nginx image runs envsubst on /etc/nginx/templates/*).
+# Set: CANDIDATE_API_URL, JOB_API_URL, APPLICATION_API_URL (scheme + host[:port]).
+server {
+    listen 80;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # SPA fallback: let React Router handle client-side routes.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # /api/<resource>/... is forwarded to the owning service as /<resource>/...
+    location /api/candidates {
+        proxy_pass ${CANDIDATE_API_URL}/candidates;
+        proxy_ssl_server_name on;
+    }
+
+    location /api/jobs {
+        proxy_pass ${JOB_API_URL}/jobs;
+        proxy_ssl_server_name on;
+    }
+
+    location /api/applications {
+        proxy_pass ${APPLICATION_API_URL}/applications;
+        proxy_ssl_server_name on;
+    }
+}
