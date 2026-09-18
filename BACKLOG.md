@@ -31,8 +31,17 @@ Each item notes *why* it was deferred so we remember the trade-off we accepted.
 
 ## Phase 4 — Edge and platform
 
-- [ ] **API gateway / BFF.** Today the React app hardcodes three service URLs and every
-      service has open CORS. A gateway gives one origin, one place for auth later.
+- [x] **API gateway** — done as a standalone YARP service (`src/ApiGateway`): own
+      container/app/pipeline; routes `/api/<resource>/*` and owns CORS at the edge.
+      (An earlier nginx-proxy-inside-the-webapp variant was rejected and reverted:
+      it mixed frontend and routing responsibilities.) Follow-ups:
+  - [ ] Remove the now-redundant permissive CORS policy from the three services.
+  - [ ] Tighten gateway CORS to the webapp's origin instead of AllowAnyOrigin.
+  - [ ] Flip the API container apps to internal-only ingress so only the gateway
+        (and ApplicationService) can reach them — verify ACA `*.internal.` FQDN
+        + TLS behavior first.
+  - [ ] Gateway test project when it gains real logic (auth, rate limiting).
+  - [ ] Azure API Management in front, as the managed-gateway comparison.
 - [ ] **Authentication/authorization** (Entra ID) — after the gateway exists.
 - [x] **Deployment to Azure Container Apps via Terraform** — done, see `infra/terraform/`
       and `DEPLOY.md`. Follow-ups now unlocked:

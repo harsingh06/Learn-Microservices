@@ -1,16 +1,12 @@
 # Build the static bundle, then serve it with nginx.
-# Vite bakes VITE_* variables in at build time, so API URLs are build args.
+# The gateway URL is baked in at build time (Vite inlines VITE_* variables).
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
-ARG VITE_CANDIDATE_API=http://localhost:5101
-ARG VITE_JOB_API=http://localhost:5102
-ARG VITE_APPLICATION_API=http://localhost:5103
-ENV VITE_CANDIDATE_API=$VITE_CANDIDATE_API \
-    VITE_JOB_API=$VITE_JOB_API \
-    VITE_APPLICATION_API=$VITE_APPLICATION_API
+ARG VITE_API_URL=http://localhost:5104
+ENV VITE_API_URL=$VITE_API_URL
 RUN npm run build
 
 FROM nginx:alpine

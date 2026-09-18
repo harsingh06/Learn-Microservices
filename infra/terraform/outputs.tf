@@ -30,6 +30,10 @@ output "application_api_url" {
   value = local.application_api_url
 }
 
+output "gateway_url" {
+  value = local.gateway_url
+}
+
 output "webapp_url" {
   value = local.webapp_url
 }
