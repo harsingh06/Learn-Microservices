@@ -54,7 +54,11 @@ jobs:
       - name: Build and push image (tag = commit SHA)
         run: |
           az acr login --name ${{ vars.ACR_NAME }}
-          docker build -t ${{ vars.ACR_LOGIN_SERVER }}/webapp:${{ github.sha }} src/WebApp
+          docker build -t ${{ vars.ACR_LOGIN_SERVER }}/webapp:${{ github.sha }} \
+            --build-arg VITE_CANDIDATE_API=${{ vars.CANDIDATE_API_URL }} \
+            --build-arg VITE_JOB_API=${{ vars.JOB_API_URL }} \
+            --build-arg VITE_APPLICATION_API=${{ vars.APPLICATION_API_URL }} \
+            src/WebApp
           docker push ${{ vars.ACR_LOGIN_SERVER }}/webapp:${{ github.sha }}
 
       - name: Roll out new revision

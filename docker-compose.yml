@@ -40,16 +40,12 @@ services:
       - candidate-service
       - job-service
 
-  # Serves the UI and reverse-proxies /api/* to the services over the Docker
-  # network — the browser only ever talks to this one origin (port 5100).
+  # The browser (not the container) calls the APIs, so the baked-in
+  # localhost URLs are correct as long as the ports above stay mapped.
   webapp:
     build: src/WebApp
     ports:
       - "5100:80"
-    environment:
-      CANDIDATE_API_URL: http://candidate-service:8080
-      JOB_API_URL: http://job-service:8080
-      APPLICATION_API_URL: http://application-service:8080
     depends_on:
       - candidate-service
       - job-service

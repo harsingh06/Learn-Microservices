@@ -254,21 +254,7 @@ resource "azurerm_container_app" "webapp" {
       image  = "${local.registry}/webapp:${var.image_tag}"
       cpu    = 0.25
       memory = "0.5Gi"
-
-      # nginx reverse-proxies /api/* to these at runtime (envsubst template),
-      # so the webapp image itself is environment-independent.
-      env {
-        name  = "CANDIDATE_API_URL"
-        value = local.candidate_api_url
-      }
-      env {
-        name  = "JOB_API_URL"
-        value = local.job_api_url
-      }
-      env {
-        name  = "APPLICATION_API_URL"
-        value = local.application_api_url
-      }
+      # No env vars: the API URLs were baked in at image build time (see DEPLOY.md).
     }
   }
 

@@ -1,16 +1,16 @@
 import type { ApplicationStatus, Candidate, Job, JobApplication } from './types'
 
-// All requests go to the webapp's own origin under /api/*; the reverse proxy
-// (nginx in the container, Vite's dev proxy locally) forwards them to the
-// right service. The browser never needs to know the services' URLs.
-const API_BASE = '/api'
+// Phase 1: the UI calls each service directly (no API gateway yet).
+const CANDIDATE_API = import.meta.env.VITE_CANDIDATE_API ?? 'http://localhost:5101'
+const JOB_API = import.meta.env.VITE_JOB_API ?? 'http://localhost:5102'
+const APPLICATION_API = import.meta.env.VITE_APPLICATION_API ?? 'http://localhost:5103'
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   let response: Response
   try {
     response = await fetch(url, init)
   } catch {
-    throw new Error(`Cannot reach ${url} — is the stack running?`)
+    throw new Error(`Cannot reach ${new URL(url).origin} — is that service running?`)
   }
   if (!response.ok) {
     throw new Error(await readErrorMessage(response))
@@ -48,19 +48,19 @@ function put<T>(url: string, body: unknown): Promise<T> {
 
 export function listCandidates(search?: string): Promise<Candidate[]> {
   const query = search ? `?search=${encodeURIComponent(search)}` : ''
-  return request(`${API_BASE}/candidates${query}`)
+  return request(`${CANDIDATE_API}/candidates${query}`)
 }
 
 export function createCandidate(fullName: string, email: string): Promise<Candidate> {
-  return post(`${API_BASE}/candidates`, { fullName, email })
+  return post(`${CANDIDATE_API}/candidates`, { fullName, email })
 }
 
 export function listJobs(): Promise<Job[]> {
-  return request(`${API_BASE}/jobs`)
+  return request(`${JOB_API}/jobs`)
 }
 
 export function createJob(title: string, description: string, location: string): Promise<Job> {
-  return post(`${API_BASE}/jobs`, { title, description, location })
+  return post(`${JOB_API}/jobs`, { title, description, location })
 }
 
 export function listApplications(filter: { candidateId?: string; jobId?: string } = {}): Promise<JobApplication[]> {
@@ -68,13 +68,13 @@ export function listApplications(filter: { candidateId?: string; jobId?: string 
   if (filter.candidateId) params.set('candidateId', filter.candidateId)
   if (filter.jobId) params.set('jobId', filter.jobId)
   const query = params.size > 0 ? `?${params}` : ''
-  return request(`${API_BASE}/applications${query}`)
+  return request(`${APPLICATION_API}/applications${query}`)
 }
 
 export function submitApplication(candidateId: string, jobId: string): Promise<JobApplication> {
-  return post(`${API_BASE}/applications`, { candidateId, jobId })
+  return post(`${APPLICATION_API}/applications`, { candidateId, jobId })
 }
 
 export function updateApplicationStatus(id: string, status: ApplicationStatus): Promise<JobApplication> {
-  return put(`${API_BASE}/applications/${id}/status`, { status })
+  return put(`${APPLICATION_API}/applications/${id}/status`, { status })
 }

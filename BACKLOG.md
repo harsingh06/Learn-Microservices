@@ -31,12 +31,8 @@ Each item notes *why* it was deferred so we remember the trade-off we accepted.
 
 ## Phase 4 — Edge and platform
 
-- [x] **BFF-lite reverse proxy.** The webapp's nginx (and Vite's dev proxy) forwards
-      `/api/*` to the services — the browser talks to one origin. Follow-ups:
-  - [ ] Flip the API container apps to internal-only ingress (verify ACA's
-        `*.internal.` FQDN + TLS behavior for the proxy and app-to-app calls first).
-  - [ ] Remove the now-unneeded permissive CORS policy from the three services.
-  - [ ] A real gateway (YARP/APIM) when auth and cross-cutting concerns arrive.
+- [ ] **API gateway / BFF.** Today the React app hardcodes three service URLs and every
+      service has open CORS. A gateway gives one origin, one place for auth later.
 - [ ] **Authentication/authorization** (Entra ID) — after the gateway exists.
 - [x] **Deployment to Azure Container Apps via Terraform** — done, see `infra/terraform/`
       and `DEPLOY.md`. Follow-ups now unlocked:
