@@ -14,6 +14,8 @@ on:
     paths:
       - "infra/terraform/**"
       - ".github/workflows/infra.yml"
+  # Manual trigger for config-only changes (e.g. a repo variable changed).
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -55,7 +57,7 @@ jobs:
 
   apply:
     needs: plan
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
