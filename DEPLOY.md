@@ -170,6 +170,40 @@ terraform apply    # updates the apps' template → new revision rolls out
 
 (One tag for all four apps keeps it simple; per-service tags are a later refinement.)
 
+## Custom domain for the webapp (optional)
+
+ACA gives every app a default `*.azurecontainerapps.io` URL; a custom hostname
+(e.g. `ats.harsingh.com`) plus a **free managed TLS certificate** takes three steps.
+Order matters: Azure validates domain ownership when the hostname is added, so
+DNS must exist first.
+
+**1. Create two records at your DNS provider/registrar:**
+
+| Type | Name | Value |
+|---|---|---|
+| TXT | `asuid.<sub>` (e.g. `asuid.ats`) | the app's verification id: `az containerapp show -n ats-webapp -g ats-rg --query properties.customDomainVerificationId -o tsv` |
+| CNAME | `<sub>` (e.g. `ats`) | the app's default FQDN (`ats-webapp.<env-domain>`) |
+
+Wait until both resolve (`Resolve-DnsName asuid.<sub>.<domain> -Type TXT`).
+
+**2. Add the hostname via Terraform** — set the domain and apply:
+
+- Pipeline path: set the repo variable, then re-run infra (or push an infra change):
+  `gh variable set WEBAPP_CUSTOM_DOMAIN --body "ats.harsingh.com"`
+- Local path: add `webapp_custom_domain = "ats.harsingh.com"` to `terraform.tfvars`
+  and `terraform apply`.
+
+**3. Bind the free managed certificate** (one-time; the azurerm provider cannot
+create managed certificates, which is why Terraform ignores the cert fields):
+
+```powershell
+az containerapp hostname bind -n ats-webapp -g ats-rg `
+  --hostname ats.harsingh.com --environment ats-env --validation-method CNAME
+```
+
+Certificate issuance takes a few minutes; afterwards `https://ats.harsingh.com`
+serves the webapp. The default FQDN keeps working alongside it.
+
 ## 7. Tear down (stop all billing)
 
 ```powershell

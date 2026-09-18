@@ -40,3 +40,11 @@ variable "min_replicas" {
   type        = number
   default     = 0
 }
+
+# Empty string = no custom domain. Set only AFTER the TXT (asuid.<sub>) and CNAME
+# records exist at the registrar — Azure validates ownership at creation time.
+variable "webapp_custom_domain" {
+  description = "Custom hostname for the webapp (e.g. ats.harsingh.com), or \"\" to skip."
+  type        = string
+  default     = ""
+}

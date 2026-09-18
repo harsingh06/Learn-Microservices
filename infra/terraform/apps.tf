@@ -220,6 +220,21 @@ resource "azurerm_container_app" "application" {
   depends_on = [azurerm_role_assignment.acr_pull]
 }
 
+# Custom domain for the webapp. The hostname is managed here, but the FREE
+# managed TLS certificate cannot be created by the azurerm provider — it is
+# provisioned once via `az containerapp hostname bind` (see DEPLOY.md), and the
+# lifecycle block stops Terraform from stripping that binding on later applies.
+resource "azurerm_container_app_custom_domain" "webapp" {
+  count = var.deploy_apps && var.webapp_custom_domain != "" ? 1 : 0
+
+  name             = var.webapp_custom_domain
+  container_app_id = azurerm_container_app.webapp[0].id
+
+  lifecycle {
+    ignore_changes = [certificate_binding_type, container_app_environment_certificate_id]
+  }
+}
+
 resource "azurerm_container_app" "gateway" {
   count = var.deploy_apps ? 1 : 0
 
