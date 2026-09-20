@@ -18,6 +18,9 @@ on:
 permissions:
   contents: read
   id-token: write
+  # A reusable workflow cannot request more than its caller grants; the deploy
+  # job uploads Trivy findings, so the caller must allow it here too.
+  security-events: write
 
 jobs:
   pipeline:

@@ -13,3 +13,7 @@ dist/
 terraform.tfvars
 *.auto.tfvars
 crash.log
+
+# Test coverage output
+coverage/
+coverage-report/

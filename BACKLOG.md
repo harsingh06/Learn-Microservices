@@ -54,9 +54,23 @@ Each item notes *why* it was deferred so we remember the trade-off we accepted.
         (code change: `CosmosClient` with `DefaultAzureCredential`).
 - [x] **CI/CD** (GitHub Actions): per-service pipelines (build → test → image → ACA)
       + infra pipeline (terraform plan on PR, apply on main). OIDC auth, no stored
-      credentials. Follow-ups:
-  - [ ] Post the terraform plan as a PR comment instead of reading job logs.
+      credentials.
+- [x] **Pipeline hardening**: format/lint gates, coverage reporting, CodeQL,
+      Dependabot, Trivy (container images pre-push + Terraform config), terraform
+      plan posted as a sticky PR comment, and branch protection on `main`
+      (PR required; CodeQL checks required). Follow-ups:
+  - [x] Post the terraform plan as a PR comment instead of reading job logs.
+  - [ ] Post-deploy smoke test: curl the deployed endpoint after
+        `az containerapp update` so the pipeline proves the deploy, not just
+        that the command exited 0.
+  - [ ] Speed/hygiene: NuGet caching, `concurrency:` to cancel superseded runs.
+  - [ ] Fix the 3 pre-existing oxlint `set-state-in-effect` warnings, then
+        consider `--deny-warnings`.
+  - [x] Triaged Trivy IaC findings (53 checks apply, all passing) and raised
+        IaC enforcement to HIGH+CRITICAL. If it stays clean, MEDIUM is the
+        next notch — 27 MEDIUM checks currently pass.
   - [ ] GitHub environment protection rule (manual approval gate) before apply/deploy.
+  - [ ] Required approvals > 0 on the branch protection rule if anyone else joins.
 - [ ] **AKS** as the second deployment target (compare against ACA).
 
 ## Phase 5 — Production hardening

@@ -1,7 +1,7 @@
 # Infrastructure pipeline: only runs when Terraform files change.
-# PRs get a plan (review it in the job log); pushes to main apply.
-# Auth is OIDC via the ARM_* env vars — the azurerm provider and backend
-# pick them up directly, no azure/login step needed.
+# PRs get a plan (posted as a comment on the PR); pushes to main apply.
+# Auth is OIDC via the ARM_* env vars — the azurerm/azapi providers and the
+# backend pick them up directly, no azure/login step needed.
 name: infra
 
 on:
@@ -20,6 +20,8 @@ on:
 permissions:
   contents: read
   id-token: write
+  pull-requests: write # post the plan as a PR comment
+  security-events: write # upload Trivy IaC findings
 
 env:
   ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -52,8 +54,76 @@ jobs:
       - name: Validate
         run: terraform validate
 
+      # Misconfiguration scanning for the Terraform itself. Triaged 2026-09-20:
+      # 53 checks apply and every one passes, so blocking on HIGH+CRITICAL costs
+      # nothing today and catches a real regression tomorrow. MEDIUM and LOW
+      # still reach the Security tab through the SARIF upload below.
+      - name: Scan Terraform (fails on HIGH or CRITICAL)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: infra/terraform
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          format: table
+
+      - name: Collect all misconfiguration findings
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: infra/terraform
+          format: sarif
+          output: trivy-iac.sarif
+
+      - name: Upload findings to the Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-iac.sarif
+          category: trivy-iac
+
       - name: Plan
-        run: terraform plan -no-color
+        run: |
+          terraform plan -no-color -out=tfplan
+          terraform show -no-color tfplan > plan.txt
+
+      # One sticky comment per PR, updated in place on each push — so reviewers
+      # see the current infrastructure diff without digging through job logs.
+      - name: Comment plan on the PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- terraform-plan -->';
+            const limit = 60000; // GitHub rejects comments over ~65k characters
+            let plan = fs.readFileSync('infra/terraform/plan.txt', 'utf8');
+            if (plan.length > limit) {
+              plan = plan.slice(0, limit) + '\n\n... truncated — see the job log for the full plan ...';
+            }
+            const body = [
+              marker,
+              '### Terraform plan',
+              '<details><summary>Show plan</summary>',
+              '',
+              '```terraform',
+              plan,
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find((c) => c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: context.issue.number, body });
+            }
 
   apply:
     needs: plan
