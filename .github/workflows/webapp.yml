@@ -1,5 +1,5 @@
-# The webapp pipeline differs from the services: Node build, and the API URLs
-# are baked into the bundle at image build time (from repo variables).
+# The webapp pipeline differs from the services: Node build, and the API URL is
+# baked into the bundle at image build time (from a repo variable).
 name: webapp
 
 on:
@@ -35,6 +35,9 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
       - name: Typecheck and build
         run: npm run build
 
@@ -42,6 +45,12 @@ jobs:
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      security-events: write # upload Trivy findings to the Security tab
+    env:
+      IMAGE: ${{ vars.ACR_LOGIN_SERVER }}/webapp:${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -51,17 +60,46 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Build and push image (tag = commit SHA)
+      - name: Build image (tag = commit SHA)
         run: |
           az acr login --name ${{ vars.ACR_NAME }}
-          docker build -t ${{ vars.ACR_LOGIN_SERVER }}/webapp:${{ github.sha }} \
+          docker build -t "$IMAGE" \
             --build-arg VITE_API_URL=${{ vars.API_URL }} \
             src/WebApp
-          docker push ${{ vars.ACR_LOGIN_SERVER }}/webapp:${{ github.sha }}
+
+      # Scan BEFORE push, so a vulnerable image never reaches the registry.
+      - name: Scan image (fails on CRITICAL)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
+      - name: Collect HIGH+CRITICAL findings
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-image.sarif
+
+      - name: Upload findings to the Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image-webapp
+
+      - name: Push image
+        run: docker push "$IMAGE"
 
       - name: Roll out new revision
         run: |
           az containerapp update \
             --name ats-webapp \
             --resource-group ${{ vars.RESOURCE_GROUP }} \
-            --image ${{ vars.ACR_LOGIN_SERVER }}/webapp:${{ github.sha }}
+            --image "$IMAGE"

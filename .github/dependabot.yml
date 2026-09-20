@@ -1,0 +1,59 @@
+# Dependency updates. Everything is grouped and weekly so this produces a
+# handful of PRs, not a flood — ungrouped Dependabot is the main reason teams
+# end up ignoring it.
+version: 2
+
+updates:
+  - package-ecosystem: nuget
+    directories:
+      - "/src/CandidateService"
+      - "/src/JobService"
+      - "/src/ApplicationService"
+      - "/tests/CandidateService.Tests"
+      - "/tests/JobService.Tests"
+      - "/tests/ApplicationService.Tests"
+    schedule:
+      interval: weekly
+    groups:
+      nuget:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: npm
+    directory: "/src/WebApp"
+    schedule:
+      interval: weekly
+    groups:
+      npm:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: terraform
+    directory: "/infra/terraform"
+    schedule:
+      interval: weekly
+    groups:
+      terraform:
+        patterns: ["*"]
+
+  # Base images (mcr.microsoft.com/dotnet/*, node, nginx) — where most container
+  # CVEs actually come from.
+  - package-ecosystem: docker
+    directories:
+      - "/src/CandidateService"
+      - "/src/JobService"
+      - "/src/ApplicationService"
+      - "/src/WebApp"
+    schedule:
+      interval: weekly
+    groups:
+      docker:
+        patterns: ["*"]

@@ -33,11 +33,31 @@ jobs:
         with:
           dotnet-version: 9.0.x
 
+      - name: Format check
+        run: |
+          dotnet format src/${{ inputs.service-name }}/${{ inputs.service-name }}.csproj --verify-no-changes
+          dotnet format tests/${{ inputs.service-name }}.Tests/${{ inputs.service-name }}.Tests.csproj --verify-no-changes
+
       - name: Build
         run: dotnet build src/${{ inputs.service-name }} -c Release
 
       - name: Test
-        run: dotnet test tests/${{ inputs.service-name }}.Tests -c Release
+        run: >
+          dotnet test tests/${{ inputs.service-name }}.Tests -c Release
+          --collect:"XPlat Code Coverage" --results-directory coverage
+
+      # Coverage is reported, never enforced — a threshold would invite gaming
+      # it. The summary lands on the run's page.
+      - name: Coverage summary
+        if: always()
+        run: |
+          dotnet tool install -g dotnet-reportgenerator-globaltool
+          reportgenerator \
+            -reports:"coverage/**/coverage.cobertura.xml" \
+            -targetdir:coverage-report \
+            -reporttypes:MarkdownSummaryGithub \
+            -title:"${{ inputs.service-name }}"
+          cat coverage-report/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
 
   deploy:
     needs: build-and-test
@@ -46,6 +66,9 @@ jobs:
     permissions:
       id-token: write # OIDC token for azure/login — no stored credentials
       contents: read
+      security-events: write # upload Trivy findings to the Security tab
+    env:
+      IMAGE: ${{ vars.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -55,15 +78,44 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Build and push image (tag = commit SHA)
+      - name: Build image (tag = commit SHA)
         run: |
           az acr login --name ${{ vars.ACR_NAME }}
-          docker build -t ${{ vars.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }} src/${{ inputs.service-name }}
-          docker push ${{ vars.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }}
+          docker build -t "$IMAGE" src/${{ inputs.service-name }}
+
+      # Scan BEFORE push, so a vulnerable image never reaches the registry.
+      - name: Scan image (fails on CRITICAL)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+
+      - name: Collect HIGH+CRITICAL findings
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-image.sarif
+
+      - name: Upload findings to the Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image-${{ inputs.image-name }}
+
+      - name: Push image
+        run: docker push "$IMAGE"
 
       - name: Roll out new revision
         run: |
           az containerapp update \
             --name ${{ inputs.app-name }} \
             --resource-group ${{ vars.RESOURCE_GROUP }} \
-            --image ${{ vars.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.sha }}
+            --image "$IMAGE"

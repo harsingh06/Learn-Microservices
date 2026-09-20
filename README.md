@@ -159,16 +159,52 @@ changing one service builds, tests, and deploys only that service:
 
 | Workflow | Triggers on | PR | Push to main |
 |---|---|---|---|
-| `candidate-service.yml` | `src/CandidateService/**` + its tests | build + test | + image → ACR → `az containerapp update` |
+| `candidate-service.yml` | `src/CandidateService/**` + its tests | format + build + test + coverage | + image → scan → ACR → `az containerapp update` |
 | `job-service.yml` / `application-service.yml` | same pattern | same | same |
-| `webapp.yml` | `src/WebApp/**` | typecheck + build | + image (API URL from repo variable) → deploy |
-| `infra.yml` | `infra/terraform/**` | fmt/validate/plan | terraform apply |
+| `webapp.yml` | `src/WebApp/**` | lint + typecheck + build | + image → scan → deploy |
+| `infra.yml` | `infra/terraform/**` | fmt/validate/IaC scan/plan (posted as a PR comment) | terraform apply |
+| `codeql.yml` | everything (no path filter) + weekly | CodeQL for C# and TypeScript | same |
 
 The three service workflows are thin wrappers around the reusable
 `service-pipeline.yml`. Images are tagged with the commit SHA; Terraform ignores
 image changes on the container apps (`lifecycle.ignore_changes`), so Terraform
 owns the app's shape while pipelines own what's running in it. Azure auth is
 passwordless (OIDC federated credentials — no secrets stored beyond IDs).
+
+### Quality gates and security scanning
+
+| Check | Tool | Blocks on |
+|---|---|---|
+| C# formatting | `dotnet format --verify-no-changes` | any diff |
+| Frontend lint | `oxlint` (`npm run lint`) | errors (current warnings are non-fatal) |
+| Test coverage | Coverlet + ReportGenerator → run summary | nothing — reported, never enforced |
+| Code (SAST) | CodeQL, C# + TypeScript | alerts in the Security tab |
+| Dependencies | Dependabot (NuGet, npm, Actions, Terraform, Docker), grouped weekly | — |
+| Container images | Trivy, **before `docker push`** | CRITICAL, unfixed ignored |
+| Terraform | Trivy config scan | CRITICAL only (lower severities reported) |
+
+Secret scanning and push protection are on by default (public repo). Trivy and
+CodeQL results are uploaded as SARIF, so findings are browsable under
+**Security → Code scanning** rather than buried in job logs.
+
+### Working on this repo
+
+`main` is protected: changes land through a pull request with green checks, not
+direct pushes.
+
+```bash
+git switch -c my-change
+# ... edit, commit ...
+git push -u origin my-change
+gh pr create --fill        # checks run here
+gh pr merge --squash       # deploys on merge
+```
+
+Only the two CodeQL checks are *required* to merge. Everything else is
+path-filtered — a required check that never runs would block the PR forever,
+and the three service workflows share a check name (they call the same reusable
+workflow), which makes them ambiguous to select. They still run and are visible
+on the PR; they're just not blocking.
 
 ## Troubleshooting
 
