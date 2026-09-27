@@ -1,5 +1,6 @@
 # Build the static bundle, then serve it with nginx.
-# The gateway URL is baked in at build time (Vite inlines VITE_* variables).
+# The API base URL is baked in at build time (Vite inlines VITE_* variables):
+# empty in Azure (same origin), the dev-router for docker-compose by default.
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY package*.json ./

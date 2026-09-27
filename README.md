@@ -42,12 +42,15 @@ validates candidate/job existence with synchronous REST calls and snapshots
 All browser API traffic goes to **one API origin** with `/api/<resource>/*` paths.
 In Azure this is **ACA rule-based routing** (a preview, environment-level
 `httpRouteConfig` managed via the azapi Terraform provider) — the platform routes
-each prefix to the owning app and the API apps are **internal-only** (no public
-FQDNs of their own). Locally the same role is played by a tiny nginx `dev-router`
-container (compose) or Vite's dev proxy (`npm run dev`) — neither is ever deployed.
+each prefix to the owning app, and `/` to the webapp, under one hostname
+(`ats.harsingh.com`). All four apps are **internal-only**; the site and its APIs
+share one origin, so the browser needs no CORS in Azure. Locally the same role is
+played by a tiny nginx `dev-router` container (compose) or Vite's dev proxy
+(`npm run dev`) — neither is ever deployed. Compose still serves the webapp and
+the dev-router on different ports, which is why the services keep a CORS policy.
 Trade-off vs. the earlier self-hosted YARP gateway: no app of ours to maintain,
 but edge cross-cutting concerns (auth, rate limiting) will need APIM or a gateway
-when they arrive; CORS therefore stays on each service.
+when they arrive.
 
 ## Prerequisites
 
@@ -140,7 +143,7 @@ Services read config from `appsettings.json`, overridable via environment variab
 | `Cosmos__Endpoint` | Cosmos endpoint (default `http://localhost:8081`, the emulator) |
 | `Cosmos__Key` | Account key (default: the well-known public emulator key) |
 | `Services__CandidateApi` / `Services__JobApi` | ApplicationService's URLs for the other services |
-| `VITE_API_URL` | API base URL baked into the WebApp at build time (Azure: the route config FQDN) |
+| `VITE_API_URL` | API base URL baked into the WebApp at build time (Azure: empty — same origin) |
 
 To point a service at a real Azure Cosmos DB account, set `Cosmos__Endpoint` and
 `Cosmos__Key` accordingly — the code path is identical.

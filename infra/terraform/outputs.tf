@@ -1,6 +1,5 @@
-# These outputs exist after the FIRST apply (deploy_apps = false) — the app URLs
-# are computed from the environment's default domain, so you can bake them into
-# the webapp image before the apps exist.
+# These outputs exist after the FIRST apply (deploy_apps = false) — the URLs are
+# computed from the environment's default domain before the apps exist.
 
 output "resource_group" {
   value = azurerm_resource_group.main.name
@@ -23,9 +22,15 @@ output "cosmos_private_ip" {
   value = azurerm_private_endpoint.cosmos.private_service_connection[0].private_ip_address
 }
 
-# The single public API entry point (environment rule-based routing FQDN).
-output "api_url" {
-  value = local.api_url
+# The site: webapp at /, APIs at /api/<resource>/* — the custom domain if set.
+output "site_url" {
+  value = local.site_url
+}
+
+# The route config's default FQDN: same entry point, always available (also the
+# CNAME target for the custom domain).
+output "route_url" {
+  value = local.route_url
 }
 
 output "candidate_internal_url" {
@@ -38,8 +43,4 @@ output "job_internal_url" {
 
 output "application_internal_url" {
   value = local.application_internal_url
-}
-
-output "webapp_url" {
-  value = local.webapp_url
 }

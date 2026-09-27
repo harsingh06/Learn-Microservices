@@ -40,9 +40,16 @@ Each item notes *why* it was deferred so we remember the trade-off we accepted.
       concerns). Locally, `local/dev-router` (compose) and Vite's proxy stand in.
       Follow-ups:
   - [ ] The preview risk: track rule-based routing to GA; revisit if limits bite.
-  - [ ] Tighten each service's CORS to the webapp origins instead of
-        AllowAnyOrigin (CORS must stay on services — the routing layer adds none).
-  - [ ] Custom domain (e.g. api.harsingh.com) on the route config.
+  - [x] Custom domain on the route config: `ats.harsingh.com` serves the webapp
+        (`/`) AND the APIs (`/api/...`) — one origin, webapp internal-only, webapp
+        image environment-agnostic (relative `/api` URLs). Trade-off: the whole
+        site, not just the API, now depends on the preview feature.
+  - [ ] CORS is now only needed locally (compose serves webapp :5100 and
+        dev-router :5104 on different origins). Either make compose same-origin
+        too (dev-router also serves `/` → webapp) and drop CORS from the services,
+        or restrict it to the local origins instead of AllowAnyOrigin.
+  - [ ] The managed certificate is created outside Terraform (`az containerapp env
+        certificate create`); confirm it renews while bound to a route config.
   - [ ] When auth/rate-limiting arrive: Azure API Management in front, or
         resurrect the YARP gateway (git history has it: commit `0681f7a`).
 - [ ] **Authentication/authorization** (Entra ID) — after the gateway exists.

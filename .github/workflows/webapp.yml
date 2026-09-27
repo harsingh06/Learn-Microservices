@@ -1,5 +1,6 @@
-# The webapp pipeline differs from the services: Node build, and the API URL is
-# baked into the bundle at image build time (from a repo variable).
+# The webapp pipeline differs from the services: Node build instead of dotnet.
+# In Azure the webapp and the APIs share one origin (the route config), so the
+# bundle calls relative /api paths and the image is the same in every environment.
 name: webapp
 
 on:
@@ -12,8 +13,7 @@ on:
     paths:
       - "src/WebApp/**"
       - ".github/workflows/webapp.yml"
-  # Manual rebuild of the current main — needed whenever the API_URL repo
-  # variable changes, since the URL is baked into the image.
+  # Manual redeploy of the current main (e.g. after the environment is recreated).
   workflow_dispatch:
 
 permissions:
@@ -63,11 +63,13 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      # Empty VITE_API_URL = same-origin relative /api calls (the Dockerfile's
+      # default, localhost:5104, is for docker-compose only).
       - name: Build image (tag = commit SHA)
         run: |
           az acr login --name ${{ vars.ACR_NAME }}
           docker build -t "$IMAGE" \
-            --build-arg VITE_API_URL=${{ vars.API_URL }} \
+            --build-arg VITE_API_URL= \
             src/WebApp
 
       # Scan BEFORE push, so a vulnerable image never reaches the registry.
