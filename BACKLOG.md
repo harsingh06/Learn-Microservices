@@ -57,6 +57,16 @@ Each item notes *why* it was deferred so we remember the trade-off we accepted.
         Data Explorer no longer works from outside the VNet; ~$8/mo.
     - [ ] NSGs on the subnets (defence in depth; nothing needs them yet).
     - [ ] ACR private endpoint — requires the Premium SKU (~$50/mo), deferred for cost.
+    - [ ] **Self-hosted runners inside the VNet** — ACA Jobs as GitHub runners, scaled
+          from the workflow job queue by KEDA's `github-runner` scaler (scale to zero).
+          Prerequisite for making any *data plane* the pipelines touch private: ACR
+          (`docker push`), the tfstate storage account (`terraform init`), a future
+          Key Vault, or smoke tests against an internal-only environment.
+          Deploys themselves (`terraform apply`, `az containerapp update`) go through
+          the public ARM control plane and never need this. Deferred: today only
+          Cosmos is private and no pipeline step touches its data plane (hybrid
+          model). Alternative: GitHub-hosted runners with Azure private networking
+          (needs a GitHub Team/Enterprise plan).
 - [x] **CI/CD** (GitHub Actions): per-service pipelines (build → test → image → ACA)
       + infra pipeline (terraform plan on PR, apply on main). OIDC auth, no stored
       credentials.
@@ -85,3 +95,20 @@ Each item notes *why* it was deferred so we remember the trade-off we accepted.
 - [ ] Observability: OpenTelemetry traces across service boundaries, health checks wired
       into orchestrator probes.
 - [ ] Redis cache if (and only if) a real read-hotspot appears.
+
+## Low priority — someday
+
+- [ ] **Split into separate repos** (platform/infra repo + one repo per service).
+      Do it in two steps, the boundary first:
+  1. In this repo: split Terraform into `infra/platform` (RG, VNet, ACA environment,
+     ACR, Log Analytics, Cosmos *account* + private endpoint, route config) and a
+     per-service stack (its container app, its Cosmos *database*), each with its own
+     state; add `CODEOWNERS`. Pairs naturally with multi-env.
+  2. Only then extract folders with `git filter-repo` (keeps history) and move
+     `service-pipeline.yml` to a shared repo as a versioned reusable workflow.
+  Deferred: one person owns everything, and per-service pipelines already give
+  independent deploys. Costs of splitting: coordinated multi-repo PRs for
+  cross-cutting changes, per-repo OIDC credentials/secrets/branch protection/
+  Dependabot, a new home for local-dev compose, and API contracts become mandatory.
+  Open questions: does a service own its container app definition or only its image?
+  Who owns the shared route config?
