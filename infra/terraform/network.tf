@@ -13,21 +13,30 @@ resource "azurerm_virtual_network" "main" {
   address_space       = ["10.0.0.0/16"]
 }
 
-# Consumption-only environment (no workload profiles): the subnet must NOT be
-# delegated, and /23 is a hard minimum — the platform reserves addresses for its
-# own infrastructure as well as the app replicas.
+# Workload-profiles environment (the Azure default for new environments; see the
+# Consumption profile in main.tf): the subnet MUST be delegated to
+# Microsoft.App/environments and nothing else may live in it. /27 is the minimum;
+# a /21 leaves ample room for replicas and the platform's own reserved addresses.
 resource "azurerm_subnet" "aca" {
   name                 = "snet-aca"
   resource_group_name  = azurerm_resource_group.main.name
   virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = ["10.0.0.0/21"]
+  address_prefixes     = ["10.0.0.0/21"] # 10.0.0.0 - 10.0.7.255
+
+  delegation {
+    name = "aca-environment"
+    service_delegation {
+      name    = "Microsoft.App/environments"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/join/action"]
+    }
+  }
 }
 
 resource "azurerm_subnet" "private_endpoints" {
   name                 = "snet-pe"
   resource_group_name  = azurerm_resource_group.main.name
   virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = ["10.0.2.0/27"]
+  address_prefixes     = ["10.0.8.0/27"] # first block after snet-aca
 }
 
 # DNS is what makes a private endpoint transparent to the apps. Public DNS answers

@@ -57,4 +57,11 @@ resource "azurerm_container_app_environment" "main" {
   resource_group_name        = azurerm_resource_group.main.name
   log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
   infrastructure_subnet_id   = azurerm_subnet.aca.id
+
+  # Explicit rather than implied: new environments are workload-profiles type,
+  # and the built-in serverless "Consumption" profile keeps scale-to-zero billing.
+  workload_profile {
+    name                  = "Consumption"
+    workload_profile_type = "Consumption"
+  }
 }
