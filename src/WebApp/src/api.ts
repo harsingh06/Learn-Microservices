@@ -1,8 +1,9 @@
 import type { ApplicationStatus, Candidate, Job, JobApplication } from './types'
 
-// All API calls hit one base URL with /api/<resource>/* paths. In Azure that's
-// the environment's rule-based-routing FQDN; in docker-compose it's the local
-// dev-router (:5104); under `npm run dev` it's same-origin via Vite's proxy.
+// All API calls hit one base URL with /api/<resource>/* paths. In Azure the base
+// is empty — the webapp and the APIs share one origin (the route config); in
+// docker-compose it's the local dev-router (:5104); under `npm run dev` it's
+// same-origin via Vite's proxy.
 const API_BASE =
   import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? '' : 'http://localhost:5104')
 

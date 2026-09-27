@@ -1,10 +1,10 @@
 # The four container apps. Created only when deploy_apps = true (images must be
 # in ACR first — see DEPLOY.md).
 #
-# App URLs are deterministic once the environment exists:
-#   https://<app-name>.<environment default_domain>
-# which is why the URLs below can be computed (and output, and baked into the
-# webapp image) BEFORE the apps themselves are created.
+# All four are internal-only. The ONLY public entry point is the route config at
+# the bottom of this file: one origin serving the webapp at / and the APIs at
+# /api/<resource>/*. Same origin means no CORS in Azure, and the webapp image
+# calls relative /api paths — nothing environment-specific is baked into it.
 
 locals {
   candidate_app_name   = "${var.prefix}-candidate"
@@ -16,15 +16,16 @@ locals {
 
   registry = azurerm_container_registry.main.login_server
 
-  # The API apps are internal-only: reachable inside the environment on their
-  # *.internal.* FQDNs, and from the internet ONLY via the route config below.
+  # Reachable only inside the environment (and, for the API apps, used by
+  # ApplicationService for its sync existence checks).
   candidate_internal_url   = "https://${local.candidate_app_name}.internal.${azurerm_container_app_environment.main.default_domain}"
   job_internal_url         = "https://${local.job_app_name}.internal.${azurerm_container_app_environment.main.default_domain}"
   application_internal_url = "https://${local.application_app_name}.internal.${azurerm_container_app_environment.main.default_domain}"
 
-  # Public API entry point (environment-level rule-based routing FQDN).
-  api_url    = "https://${local.route_config_name}.${azurerm_container_app_environment.main.default_domain}"
-  webapp_url = "https://${local.webapp_app_name}.${azurerm_container_app_environment.main.default_domain}"
+  # The route config's default FQDN always works; the custom domain, if set,
+  # is the same entry point under your own name.
+  route_url = "https://${local.route_config_name}.${azurerm_container_app_environment.main.default_domain}"
+  site_url  = var.webapp_custom_domain != "" ? "https://${var.webapp_custom_domain}" : local.route_url
 }
 
 resource "azurerm_container_app" "candidate" {
@@ -34,6 +35,7 @@ resource "azurerm_container_app" "candidate" {
   container_app_environment_id = azurerm_container_app_environment.main.id
   resource_group_name          = azurerm_resource_group.main.name
   revision_mode                = "Single"
+  workload_profile_name        = "Consumption" # the env's serverless profile (main.tf)
 
   identity {
     type         = "UserAssigned"
@@ -99,6 +101,7 @@ resource "azurerm_container_app" "job" {
   container_app_environment_id = azurerm_container_app_environment.main.id
   resource_group_name          = azurerm_resource_group.main.name
   revision_mode                = "Single"
+  workload_profile_name        = "Consumption" # the env's serverless profile (main.tf)
 
   identity {
     type         = "UserAssigned"
@@ -164,6 +167,7 @@ resource "azurerm_container_app" "application" {
   container_app_environment_id = azurerm_container_app_environment.main.id
   resource_group_name          = azurerm_resource_group.main.name
   revision_mode                = "Single"
+  workload_profile_name        = "Consumption" # the env's serverless profile (main.tf)
 
   identity {
     type         = "UserAssigned"
@@ -231,26 +235,18 @@ resource "azurerm_container_app" "application" {
   depends_on = [azurerm_role_assignment.acr_pull]
 }
 
-# Custom domain for the webapp. The hostname is managed here, but the FREE
-# managed TLS certificate cannot be created by the azurerm provider — it is
-# provisioned once via `az containerapp hostname bind` (see DEPLOY.md), and the
-# lifecycle block stops Terraform from stripping that binding on later applies.
-resource "azurerm_container_app_custom_domain" "webapp" {
-  count = var.deploy_apps && var.webapp_custom_domain != "" ? 1 : 0
-
-  name             = var.webapp_custom_domain
-  container_app_id = azurerm_container_app.webapp[0].id
-
-  lifecycle {
-    ignore_changes = [certificate_binding_type, container_app_environment_certificate_id]
-  }
+# The route config was API-only when it was named api_routes; it now fronts the
+# whole site. `moved` renames it in state instead of destroying and recreating it.
+moved {
+  from = azapi_resource.api_routes
+  to   = azapi_resource.routes
 }
 
-# Rule-based routing (PREVIEW): one environment-level FQDN routes /api/<resource>/*
-# to the owning internal-only app — the platform's replacement for a self-hosted
-# gateway. azurerm has no resource for this yet, hence azapi. Rule order matters:
-# more specific prefixes must come first (ours don't overlap).
-resource "azapi_resource" "api_routes" {
+# Rule-based routing (PREVIEW): the single public entry point of the environment,
+# the platform's replacement for a self-hosted gateway. azurerm has no resource
+# for this yet, hence azapi. Rules are matched IN ORDER: the /api prefixes first,
+# the "/" catch-all for the webapp last — otherwise it would swallow /api too.
+resource "azapi_resource" "routes" {
   count = var.deploy_apps ? 1 : 0
 
   type      = "Microsoft.App/managedEnvironments/httpRouteConfigs@2025-10-02-preview"
@@ -259,6 +255,16 @@ resource "azapi_resource" "api_routes" {
 
   body = {
     properties = {
+      # A domain binds to exactly ONE of: an app, a route config, or the
+      # environment — so it must not also be on the webapp. "Auto" attaches the
+      # environment's existing managed certificate for this hostname, which is
+      # created once outside Terraform (see DEPLOY.md, custom domain).
+      customDomains = var.webapp_custom_domain == "" ? [] : [
+        {
+          name        = var.webapp_custom_domain
+          bindingType = "Auto"
+        }
+      ]
       rules = [
         {
           description = "Candidate service"
@@ -289,6 +295,16 @@ resource "azapi_resource" "api_routes" {
             }
           ]
           targets = [{ containerApp = local.application_app_name }]
+        },
+        {
+          # Catch-all: everything else is the SPA (nginx falls back to index.html).
+          description = "Webapp"
+          routes = [
+            {
+              match = { prefix = "/" }
+            }
+          ]
+          targets = [{ containerApp = local.webapp_app_name }]
         }
       ]
     }
@@ -298,6 +314,7 @@ resource "azapi_resource" "api_routes" {
     azurerm_container_app.candidate,
     azurerm_container_app.job,
     azurerm_container_app.application,
+    azurerm_container_app.webapp,
   ]
 }
 
@@ -308,6 +325,7 @@ resource "azurerm_container_app" "webapp" {
   container_app_environment_id = azurerm_container_app_environment.main.id
   resource_group_name          = azurerm_resource_group.main.name
   revision_mode                = "Single"
+  workload_profile_name        = "Consumption" # the env's serverless profile (main.tf)
 
   identity {
     type         = "UserAssigned"
@@ -320,7 +338,9 @@ resource "azurerm_container_app" "webapp" {
   }
 
   ingress {
-    external_enabled = true
+    # Internal-only like the APIs: served to the internet solely through the
+    # route config's "/" rule.
+    external_enabled = false
     target_port      = 80
     traffic_weight {
       latest_revision = true
@@ -337,7 +357,7 @@ resource "azurerm_container_app" "webapp" {
       image  = "${local.registry}/webapp:${var.image_tag}"
       cpu    = 0.25
       memory = "0.5Gi"
-      # No env vars: the API URLs were baked in at image build time (see DEPLOY.md).
+      # No env vars: the bundle calls relative /api paths on its own origin.
     }
   }
 

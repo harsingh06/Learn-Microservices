@@ -43,8 +43,9 @@ variable "min_replicas" {
 
 # Empty string = no custom domain. Set only AFTER the TXT (asuid.<sub>) and CNAME
 # records exist at the registrar — Azure validates ownership at creation time.
+# Bound to the route config, so it serves the webapp AND the /api routes.
 variable "webapp_custom_domain" {
-  description = "Custom hostname for the webapp (e.g. ats.harsingh.com), or \"\" to skip."
+  description = "Custom hostname for the site (e.g. ats.harsingh.com), or \"\" to skip."
   type        = string
   default     = ""
 }

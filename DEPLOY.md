@@ -11,11 +11,12 @@ Resource group: ats-rg (Central India)
 ├── ats-logs                 Log Analytics — container logs land here
 ├── ats-apps-identity        managed identity the apps use to pull from ACR
 ├── ats-env                  Container Apps environment (shared network + domain)
-│   ├── atsroutes            rule-based routing (PREVIEW) → THE public API URL
+│   ├── atsroutes            rule-based routing (PREVIEW) → THE public entry point:
+│   │                          /api/<resource>/* → services, / → webapp (+ custom domain)
 │   ├── ats-candidate        candidate-service  :8080 → internal-only ingress
 │   ├── ats-job              job-service        :8080 → internal-only ingress
 │   ├── ats-application      application-service:8080 → internal-only ingress
-│   └── ats-webapp           nginx + React      :80   → public https URL
+│   └── ats-webapp           nginx + React      :80   → internal-only ingress
 └── ats-<suffix>-cosmos      Cosmos DB (free tier) — candidates-db / jobs-db / applications-db
 ```
 
@@ -25,14 +26,12 @@ emulator and the compose network. The services themselves are unchanged — only
 
 ## Why the deploy is two `terraform apply` passes
 
-A container app can't be created before its image exists in ACR, and the webapp
-bakes the gateway URL into its JS bundle at **image build time** — but app URLs
-are deterministic once the environment is up (`https://<app-name>.<env-domain>`),
-so:
+A container app can't be created before its image exists in ACR, so:
 
 1. **Apply #1** (`deploy_apps = false`) creates everything *except* the apps and
-   outputs the future URLs (including `api_url`, the route-config FQDN).
-2. `az acr build` builds the images in the cloud, giving the webapp the API URL.
+   outputs the future URLs (`route_url`, the route-config FQDN, is the site).
+2. `az acr build` builds the images in the cloud. The webapp needs no URL: it
+   shares an origin with the APIs and calls relative `/api/...` paths.
 3. **Apply #2** (`deploy_apps = true`) creates the four apps + the route config
    (an `httpRouteConfigs` PREVIEW resource, managed via the azapi provider —
    if apply fails with an unknown-resource-type error, the preview may not be
@@ -83,7 +82,7 @@ az provider register --namespace Microsoft.ManagedIdentity --subscription <subsc
 ```powershell
 terraform plan     # read it! ~13 resources, no container apps
 terraform apply    # type: yes  (~5-8 min; Cosmos is the slow one)
-terraform output   # note acr_name and the four *_url values
+terraform output   # note acr_name and route_url
 ```
 
 > Free-tier note: only one free-tier Cosmos account is allowed per subscription.
@@ -93,7 +92,7 @@ terraform output   # note acr_name and the four *_url values
 ## 3. Build and push the four images
 
 `az acr build` uploads the source and builds **in Azure** — local Docker not needed.
-Replace `<acr_name>` and the URLs with your `terraform output` values.
+Replace `<acr_name>` with your `terraform output` value.
 
 ```powershell
 cd ../..    # back to repo root
@@ -102,8 +101,9 @@ az acr build -r <acr_name> -t candidate-service:v1   src/CandidateService
 az acr build -r <acr_name> -t job-service:v1         src/JobService
 az acr build -r <acr_name> -t application-service:v1 src/ApplicationService
 
+# Empty VITE_API_URL = relative /api calls (same origin as the site)
 az acr build -r <acr_name> -t webapp:v1 `
-  --build-arg VITE_API_URL=<api_url> `
+  --build-arg VITE_API_URL= `
   src/WebApp
 ```
 
@@ -118,7 +118,7 @@ az acr build -r <acr_name> -t webapp:v1 `
 > docker build -t <acr_login_server>/job-service:v1 src/JobService
 > docker build -t <acr_login_server>/application-service:v1 src/ApplicationService
 > docker build -t <acr_login_server>/webapp:v1 `
->   --build-arg VITE_API_URL=<api_url> `
+>   --build-arg VITE_API_URL= `
 >   src/WebApp
 > docker push <acr_login_server>/candidate-service:v1
 > docker push <acr_login_server>/job-service:v1
@@ -132,23 +132,27 @@ Edit `infra/terraform/terraform.tfvars`: set `deploy_apps = true`. Then:
 
 ```powershell
 cd infra/terraform
-terraform plan     # exactly 4 new resources: the container apps
+terraform plan     # the 4 container apps + the route config
 terraform apply
 ```
 
 ## 5. Verify
 
+Everything goes through the one entry point (`route_url`, or `site_url` once a
+custom domain is set):
+
 ```powershell
-curl https://<candidate_api_url>/health      # {"status":"ok",...} x3 services
-curl https://<job_api_url>/health
-curl https://<application_api_url>/health
+curl <route_url>/                      # the webapp's index.html
+curl <route_url>/api/candidates        # [] or your candidates
+curl <route_url>/api/jobs
+curl <route_url>/api/applications
 ```
 
 First request after idle is slow (~10-20 s): `min_replicas = 0` means apps scale
 to zero and cold-start on demand. That's the cost/latency trade-off — set
 `min_replicas = 1` in `terraform.tfvars` if it annoys you.
 
-Then open `webapp_url` in a browser and click through: create a candidate, a job,
+Then open the same URL in a browser and click through: create a candidate, a job,
 apply, change the application status. Checking the documents in the portal's
 Data Explorer no longer works from outside the VNet (Cosmos is private — see
 [Networking](#networking)); verify through the API instead.
@@ -169,10 +173,11 @@ after the environment is recreated), run the workflow manually:
 `image_tag` in Terraform is only the **initial** image when an app is first
 created — the apps `ignore_changes` on the image, so bumping it later does nothing.
 
-## Custom domain for the webapp (optional)
+## Custom domain for the site (optional)
 
-ACA gives every app a default `*.azurecontainerapps.io` URL; a custom hostname
-(e.g. `ats.harsingh.com`) plus a **free managed TLS certificate** takes three steps.
+The domain is bound to the **route config**, not the webapp, so one hostname
+serves both the webapp (`/`) and the APIs (`/api/...`) — same origin, no CORS.
+A domain can be bound to only ONE of: an app, a route config, or the environment.
 Order matters: Azure validates domain ownership when the hostname is added, so
 DNS must exist first.
 
@@ -180,9 +185,11 @@ DNS must exist first.
 
 | Type | Name | Value |
 |---|---|---|
-| TXT | `asuid.<sub>` (e.g. `asuid.ats`) | the app's verification id: `az containerapp show -n ats-webapp -g ats-rg --query properties.customDomainVerificationId -o tsv` |
-| CNAME | `<sub>` (e.g. `ats`) | the app's default FQDN (`ats-webapp.<env-domain>`) |
+| TXT | `asuid.<sub>` (e.g. `asuid.ats`) | the environment's verification id: `az containerapp env show -n ats-env -g ats-rg --query properties.customDomainConfiguration.customDomainVerificationId -o tsv` |
+| CNAME | `<sub>` (e.g. `ats`) | the route config FQDN (`terraform output route_url`, without `https://`) |
 
+(An apex domain can't be a CNAME — use an A record to the environment's static IP,
+`az containerapp env show -n ats-env -g ats-rg --query properties.staticIp -o tsv`.)
 Wait until both resolve (`Resolve-DnsName asuid.<sub>.<domain> -Type TXT`).
 
 **2. Add the hostname via Terraform** — set the domain and apply:
@@ -192,16 +199,20 @@ Wait until both resolve (`Resolve-DnsName asuid.<sub>.<domain> -Type TXT`).
 - Local path: add `webapp_custom_domain = "ats.harsingh.com"` to `terraform.tfvars`
   and `terraform apply`.
 
-**3. Bind the free managed certificate** (one-time; the azurerm provider cannot
-create managed certificates, which is why Terraform ignores the cert fields):
+The route config lists it with `bindingType = "Auto"`: HTTP-only until a managed
+certificate for that hostname exists in the environment, then attached automatically.
+
+**3. Create the free managed certificate** (one-time per environment; neither
+azurerm nor our Terraform creates it):
 
 ```powershell
-az containerapp hostname bind -n ats-webapp -g ats-rg `
-  --hostname ats.harsingh.com --environment ats-env --validation-method CNAME
+az containerapp env certificate create -g ats-rg -n ats-env `
+  --hostname ats.harsingh.com --validation-method CNAME `
+  --certificate-name mc-ats-harsingh-com
 ```
 
-Certificate issuance takes a few minutes; afterwards `https://ats.harsingh.com`
-serves the webapp. The default FQDN keeps working alongside it.
+Issuance takes a few minutes; afterwards `https://ats.harsingh.com` serves the
+site. The route config's default FQDN keeps working alongside it.
 
 ## Networking
 
@@ -218,10 +229,10 @@ private DNS zone privatelink.documents.azure.com, linked to the VNet
   (`terraform output cosmos_private_ip`).
 - Portal **Data Explorer** from your laptop is blocked; Terraform is not
   (databases/containers go through the ARM control plane).
-- Ingress is unchanged: the webapp and the API route config stay public.
+- The only public ingress is the route config; all four apps are internal-only.
 - Changing the environment's subnet **recreates the environment** — new default
-  domain, so `API_URL` must be updated, the webapp rebuilt, and the custom
-  domain CNAME repointed.
+  domain, so the custom domain CNAME must be repointed and its managed
+  certificate recreated. The webapp image needs no rebuild (relative /api URLs).
 
 Check private resolution from inside an app:
 
