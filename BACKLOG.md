@@ -52,6 +52,11 @@ Each item notes *why* it was deferred so we remember the trade-off we accepted.
   - [x] Per-service image tags — pipelines deploy `<service>:<git sha>`.
   - [ ] Cosmos data-plane auth via managed identity instead of the account key
         (code change: `CosmosClient` with `DefaultAzureCredential`).
+  - [x] VNet: ACA environment in `snet-aca`, Cosmos reachable only via a private
+        endpoint in `snet-pe` (public network access disabled). Trade-off: portal
+        Data Explorer no longer works from outside the VNet; ~$8/mo.
+    - [ ] NSGs on the subnets (defence in depth; nothing needs them yet).
+    - [ ] ACR private endpoint — requires the Premium SKU (~$50/mo), deferred for cost.
 - [x] **CI/CD** (GitHub Actions): per-service pipelines (build → test → image → ACA)
       + infra pipeline (terraform plan on PR, apply on main). OIDC auth, no stored
       credentials.

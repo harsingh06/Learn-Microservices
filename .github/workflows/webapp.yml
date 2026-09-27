@@ -12,6 +12,9 @@ on:
     paths:
       - "src/WebApp/**"
       - ".github/workflows/webapp.yml"
+  # Manual rebuild of the current main — needed whenever the API_URL repo
+  # variable changes, since the URL is baked into the image.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -43,7 +46,7 @@ jobs:
 
   deploy:
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       id-token: write

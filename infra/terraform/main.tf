@@ -46,9 +46,15 @@ resource "azurerm_role_assignment" "acr_pull" {
   principal_id         = azurerm_user_assigned_identity.apps.principal_id
 }
 
+# Joined to snet-aca so the apps can reach Cosmos over its private endpoint.
+# Ingress stays public (internal_load_balancer_enabled defaults to false): the
+# webapp and the API route config are still internet-facing.
+# WARNING: infrastructure_subnet_id is ForceNew — changing it destroys and
+# recreates the environment and every app in it (new default domain, new URLs).
 resource "azurerm_container_app_environment" "main" {
   name                       = "${var.prefix}-env"
   location                   = azurerm_resource_group.main.location
   resource_group_name        = azurerm_resource_group.main.name
   log_analytics_workspace_id = azurerm_log_analytics_workspace.main.id
+  infrastructure_subnet_id   = azurerm_subnet.aca.id
 }
