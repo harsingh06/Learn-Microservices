@@ -26,7 +26,7 @@ jobs:
       matrix:
         language: [csharp, javascript-typescript]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # build-mode: none — CodeQL analyses the source directly, so the workflow
       # doesn't need the .NET/Node toolchains or a successful build.
