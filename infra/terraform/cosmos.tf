@@ -3,7 +3,7 @@
 # via environment variables on the container apps.
 
 resource "azurerm_cosmosdb_account" "main" {
-  name                = "${var.prefix}-${random_string.suffix.result}-cosmos"
+  name                = local.names.cosmos
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
   offer_type          = "Standard"
@@ -12,10 +12,9 @@ resource "azurerm_cosmosdb_account" "main" {
   # Only ONE free-tier account is allowed per subscription; apply fails if taken.
   free_tier_enabled = true
 
-  # Data plane reachable ONLY through the private endpoint (network.tf). The
-  # portal's Data Explorer from your laptop stops working. Terraform still
-  # works: databases/containers are managed via the ARM control plane.
-  public_network_access_enabled = false
+  # Public network access (the default): the data plane is protected by the
+  # account key only. Moving to managed identity auth is in BACKLOG.md.
+  tags = local.tags
 
   consistency_policy {
     consistency_level = "Session"

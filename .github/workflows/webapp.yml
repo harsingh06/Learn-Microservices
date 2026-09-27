@@ -105,6 +105,6 @@ jobs:
       - name: Roll out new revision
         run: |
           az containerapp update \
-            --name ats-webapp \
+            --name ca-ats-webapp-prod-cin-01 \
             --resource-group ${{ vars.RESOURCE_GROUP }} \
             --image "$IMAGE"

@@ -7,12 +7,12 @@
 # calls relative /api paths — nothing environment-specific is baked into it.
 
 locals {
-  candidate_app_name   = "${var.prefix}-candidate"
-  job_app_name         = "${var.prefix}-job"
-  application_app_name = "${var.prefix}-application"
-  webapp_app_name      = "${var.prefix}-webapp"
-  # Route config names must match ^[a-z][a-z0-9]*$ (no hyphens).
-  route_config_name = "${var.prefix}routes"
+  # Names come from the naming convention in main.tf.
+  candidate_app_name   = local.app_names.candidate
+  job_app_name         = local.app_names.job
+  application_app_name = local.app_names.application
+  webapp_app_name      = local.app_names.webapp
+  route_config_name    = local.names.route_config
 
   registry = azurerm_container_registry.main.login_server
 
@@ -36,6 +36,7 @@ resource "azurerm_container_app" "candidate" {
   resource_group_name          = azurerm_resource_group.main.name
   revision_mode                = "Single"
   workload_profile_name        = "Consumption" # the env's serverless profile (main.tf)
+  tags                         = local.tags
 
   identity {
     type         = "UserAssigned"
@@ -102,6 +103,7 @@ resource "azurerm_container_app" "job" {
   resource_group_name          = azurerm_resource_group.main.name
   revision_mode                = "Single"
   workload_profile_name        = "Consumption" # the env's serverless profile (main.tf)
+  tags                         = local.tags
 
   identity {
     type         = "UserAssigned"
@@ -168,6 +170,7 @@ resource "azurerm_container_app" "application" {
   resource_group_name          = azurerm_resource_group.main.name
   revision_mode                = "Single"
   workload_profile_name        = "Consumption" # the env's serverless profile (main.tf)
+  tags                         = local.tags
 
   identity {
     type         = "UserAssigned"
@@ -326,6 +329,7 @@ resource "azurerm_container_app" "webapp" {
   resource_group_name          = azurerm_resource_group.main.name
   revision_mode                = "Single"
   workload_profile_name        = "Consumption" # the env's serverless profile (main.tf)
+  tags                         = local.tags
 
   identity {
     type         = "UserAssigned"

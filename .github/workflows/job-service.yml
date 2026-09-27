@@ -30,6 +30,6 @@ jobs:
     with:
       service-name: JobService
       image-name: job-service
-      app-name: ats-job
+      app-name: ca-ats-job-prod-cin-01
       deploy: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
     secrets: inherit

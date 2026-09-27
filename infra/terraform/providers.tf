@@ -6,6 +6,8 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 4.0"
     }
+    # No longer used (names are deterministic now). Kept for ONE apply so the old
+    # random_string in state can be destroyed — remove afterwards.
     random = {
       source  = "hashicorp/random"
       version = "~> 3.6"

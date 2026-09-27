@@ -59,20 +59,28 @@ Each item notes *why* it was deferred so we remember the trade-off we accepted.
   - [x] Per-service image tags — pipelines deploy `<service>:<git sha>`.
   - [ ] Cosmos data-plane auth via managed identity instead of the account key
         (code change: `CosmosClient` with `DefaultAzureCredential`).
-  - [x] VNet: ACA environment in `snet-aca`, Cosmos reachable only via a private
-        endpoint in `snet-pe` (public network access disabled). Trade-off: portal
-        Data Explorer no longer works from outside the VNet; ~$8/mo.
-    - [ ] NSGs on the subnets (defence in depth; nothing needs them yet).
-    - [ ] ACR private endpoint — requires the Premium SKU (~$50/mo), deferred for cost.
+  - [x] **Naming convention** `<type>-<workload>-<env>-<region>-<nn>` (CAF type
+        abbreviations, e.g. `rg-ats-prod-cin-01`), built in one `locals` block in
+        `main.tf`; standard tags `workload`/`environment`/`managed-by`. Applied with
+        a full rebuild on 2026-09-27 (Cosmos data reset).
+  - [ ] Remove the `random` provider from `providers.tf` (kept for one apply so the
+        old `random_string` could be destroyed).
+  - [ ] **VNet — built, then removed (2026-09-27).** It was: ACA environment in a
+        delegated subnet, Cosmos behind a private endpoint with public access
+        disabled (~$8/mo). Rolled back to Azure-managed networking; Cosmos is public
+        again, protected by its key. To restore, start from `network.tf` at commit
+        `494b547` — and note that adding or removing a VNet RECREATES the
+        environment (new default domain, custom-domain cert and DNS redone).
+    - [ ] NSGs on the subnets (defence in depth).
+    - [ ] ACR private endpoint — requires the Premium SKU (~$50/mo).
     - [ ] **Self-hosted runners inside the VNet** — ACA Jobs as GitHub runners, scaled
           from the workflow job queue by KEDA's `github-runner` scaler (scale to zero).
           Prerequisite for making any *data plane* the pipelines touch private: ACR
           (`docker push`), the tfstate storage account (`terraform init`), a future
           Key Vault, or smoke tests against an internal-only environment.
           Deploys themselves (`terraform apply`, `az containerapp update`) go through
-          the public ARM control plane and never need this. Deferred: today only
-          Cosmos is private and no pipeline step touches its data plane (hybrid
-          model). Alternative: GitHub-hosted runners with Azure private networking
+          the public ARM control plane and never need this. Only relevant if the
+          VNet comes back. Alternative: GitHub-hosted runners with Azure private networking
           (needs a GitHub Team/Enterprise plan).
 - [x] **CI/CD** (GitHub Actions): per-service pipelines (build → test → image → ACA)
       + infra pipeline (terraform plan on PR, apply on main). OIDC auth, no stored
@@ -91,6 +99,15 @@ Each item notes *why* it was deferred so we remember the trade-off we accepted.
   - [x] Triaged Trivy IaC findings (53 checks apply, all passing) and raised
         IaC enforcement to HIGH+CRITICAL. If it stays clean, MEDIUM is the
         next notch — 27 MEDIUM checks currently pass.
+  - [ ] **Infra apply can revert a concurrent image deploy.** `ignore_changes` on
+        the image only stops Terraform *planning* image changes; when it updates an
+        app for any other reason, azurerm PUTs the whole template with the image
+        from its (possibly seconds-stale) refresh. Hit on 2026-09-27: a merge
+        touching both `apps.tf` and `src/WebApp` left the webapp on the previous
+        image. Workaround: rerun the app's workflow after infra. Fix options: a
+        shared `concurrency` group on the apply/deploy jobs (beware: GitHub keeps
+        only ONE pending run per group and cancels older pending ones), or the
+        post-deploy smoke test asserting the running image tag = commit SHA.
   - [ ] GitHub environment protection rule (manual approval gate) before apply/deploy.
   - [ ] Required approvals > 0 on the branch protection rule if anyone else joins.
 - [ ] **AKS** as the second deployment target (compare against ACA).

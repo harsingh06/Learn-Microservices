@@ -15,7 +15,7 @@ on:
         required: true
         type: string
       app-name:
-        description: Azure Container App name, e.g. ats-candidate
+        description: Azure Container App name, e.g. ca-ats-candidate-prod-cin-01
         required: true
         type: string
       deploy:
