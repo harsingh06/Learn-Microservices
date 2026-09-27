@@ -3,14 +3,40 @@ variable "subscription_id" {
   type        = string
 }
 
-variable "prefix" {
-  description = "Short name prefix for all resources."
+# Naming convention (see locals in main.tf):
+#   <type>-<workload>-<environment>-<region>-<instance>   e.g. rg-ats-prod-cin-01
+# Types that forbid hyphens (ACR, route config) use the same parts without them.
+
+variable "workload" {
+  description = "Workload short name, the second part of every resource name."
   type        = string
   default     = "ats"
 }
 
+variable "environment" {
+  description = "Environment label in resource names and tags: dev, test or prod."
+  type        = string
+  default     = "prod"
+
+  validation {
+    condition     = contains(["dev", "test", "prod"], var.environment)
+    error_message = "environment must be dev, test or prod."
+  }
+}
+
+variable "instance" {
+  description = "Two-digit instance number; bump it (02) to stand up a second copy of the same environment side by side."
+  type        = string
+  default     = "01"
+
+  validation {
+    condition     = can(regex("^[0-9]{2}$", var.instance))
+    error_message = "instance must be two digits, e.g. 01."
+  }
+}
+
 variable "location" {
-  description = "Azure region for all resources."
+  description = "Azure region for all resources. Must have a short code in local.region_codes (main.tf)."
   type        = string
   default     = "centralindia"
 }
@@ -42,7 +68,8 @@ variable "min_replicas" {
 }
 
 # Empty string = no custom domain. Set only AFTER the TXT (asuid.<sub>) and CNAME
-# records exist at the registrar — Azure validates ownership at creation time.
+# records exist at the registrar, and the managed certificate has been created —
+# see DEPLOY.md, custom domain.
 # Bound to the route config, so it serves the webapp AND the /api routes.
 variable "webapp_custom_domain" {
   description = "Custom hostname for the site (e.g. ats.harsingh.com), or \"\" to skip."

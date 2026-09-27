@@ -13,13 +13,17 @@ output "acr_name" {
   value = azurerm_container_registry.main.name
 }
 
-output "cosmos_endpoint" {
-  value = azurerm_cosmosdb_account.main.endpoint
+output "environment_name" {
+  value = azurerm_container_app_environment.main.name
 }
 
-# What the Cosmos hostname should resolve to from inside the environment.
-output "cosmos_private_ip" {
-  value = azurerm_private_endpoint.cosmos.private_service_connection[0].private_ip_address
+# Container app names, for the pipelines' `az containerapp update --name`.
+output "app_names" {
+  value = local.app_names
+}
+
+output "cosmos_endpoint" {
+  value = azurerm_cosmosdb_account.main.endpoint
 }
 
 # The site: webapp at /, APIs at /api/<resource>/* — the custom domain if set.

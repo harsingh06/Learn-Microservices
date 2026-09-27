@@ -6,19 +6,32 @@ All commands run from the repo root unless noted. Estimated first deploy: ~20 mi
 ## The shape of the deployment
 
 ```
-Resource group: ats-rg (Central India)
-├── ats<suffix>acr           Azure Container Registry (Basic) — your 4 images
-├── ats-logs                 Log Analytics — container logs land here
-├── ats-apps-identity        managed identity the apps use to pull from ACR
-├── ats-env                  Container Apps environment (shared network + domain)
-│   ├── atsroutes            rule-based routing (PREVIEW) → THE public entry point:
-│   │                          /api/<resource>/* → services, / → webapp (+ custom domain)
-│   ├── ats-candidate        candidate-service  :8080 → internal-only ingress
-│   ├── ats-job              job-service        :8080 → internal-only ingress
-│   ├── ats-application      application-service:8080 → internal-only ingress
-│   └── ats-webapp           nginx + React      :80   → internal-only ingress
-└── ats-<suffix>-cosmos      Cosmos DB (free tier) — candidates-db / jobs-db / applications-db
+Resource group: rg-ats-prod-cin-01 (Central India)
+├── acratsprodcin01                Azure Container Registry (Basic) — your 4 images
+├── log-ats-prod-cin-01            Log Analytics — container logs land here
+├── id-ats-apps-prod-cin-01        managed identity the apps use to pull from ACR
+├── cae-ats-prod-cin-01            Container Apps environment (shared network + domain)
+│   ├── rtatsprodcin01             rule-based routing (PREVIEW) → THE public entry point:
+│   │                                /api/<resource>/* → services, / → webapp (+ custom domain)
+│   ├── ca-ats-candidate-prod-cin-01    candidate-service  :8080 → internal-only
+│   ├── ca-ats-job-prod-cin-01          job-service        :8080 → internal-only
+│   ├── ca-ats-application-prod-cin-01  application-service:8080 → internal-only
+│   └── ca-ats-webapp-prod-cin-01       nginx + React      :80   → internal-only
+└── cosmos-ats-prod-cin-01         Cosmos DB (free tier) — candidates-db / jobs-db / applications-db
 ```
+
+### Naming convention
+
+`<type>-<workload>-<environment>-<region>-<instance>` — type abbreviations from
+Microsoft's Cloud Adoption Framework (`rg`, `log`, `acr`, `id`, `cae`, `ca`,
+`cosmos`), region `cin` = Central India, instance `01` (a second copy of the same
+environment side by side would be `02`). ACR and the route config forbid hyphens,
+so they use the same parts run together. Every name is built in one place: the
+`locals` block at the top of `infra/terraform/main.tf`. Every resource is tagged
+`workload`, `environment`, `managed-by=terraform`.
+
+No VNet: the environment uses Azure-managed networking, and Cosmos accepts
+public network traffic authenticated by its account key.
 
 Same topology as `docker-compose.yml`, with Azure services substituting for the
 emulator and the compose network. The services themselves are unchanged — only
@@ -153,14 +166,13 @@ to zero and cold-start on demand. That's the cost/latency trade-off — set
 `min_replicas = 1` in `terraform.tfvars` if it annoys you.
 
 Then open the same URL in a browser and click through: create a candidate, a job,
-apply, change the application status. Checking the documents in the portal's
-Data Explorer no longer works from outside the VNet (Cosmos is private — see
-[Networking](#networking)); verify through the API instead.
+apply, change the application status. Check the documents in the portal:
+Cosmos account → Data Explorer → each service's own database.
 
 Logs: portal → Container App → **Log stream** (live), or Logs (Log Analytics):
 
 ```kusto
-ContainerAppConsoleLogs_CL | where ContainerAppName_s == "ats-application" | take 50
+ContainerAppConsoleLogs_CL | where ContainerAppName_s == "ca-ats-application-prod-cin-01" | take 50
 ```
 
 ## 6. Shipping a code change
@@ -185,11 +197,11 @@ DNS must exist first.
 
 | Type | Name | Value |
 |---|---|---|
-| TXT | `asuid.<sub>` (e.g. `asuid.ats`) | the environment's verification id: `az containerapp env show -n ats-env -g ats-rg --query properties.customDomainConfiguration.customDomainVerificationId -o tsv` |
+| TXT | `asuid.<sub>` (e.g. `asuid.ats`) | the environment's verification id: `az containerapp env show -n cae-ats-prod-cin-01 -g rg-ats-prod-cin-01 --query properties.customDomainConfiguration.customDomainVerificationId -o tsv` |
 | CNAME | `<sub>` (e.g. `ats`) | the route config FQDN (`terraform output route_url`, without `https://`) |
 
 (An apex domain can't be a CNAME — use an A record to the environment's static IP,
-`az containerapp env show -n ats-env -g ats-rg --query properties.staticIp -o tsv`.)
+`az containerapp env show -n cae-ats-prod-cin-01 -g rg-ats-prod-cin-01 --query properties.staticIp -o tsv`.)
 Wait until both resolve (`Resolve-DnsName asuid.<sub>.<domain> -Type TXT`).
 
 **2. Add the hostname via Terraform** — set the domain and apply:
@@ -206,40 +218,13 @@ certificate for that hostname exists in the environment, then attached automatic
 azurerm nor our Terraform creates it):
 
 ```powershell
-az containerapp env certificate create -g ats-rg -n ats-env `
+az containerapp env certificate create -g rg-ats-prod-cin-01 -n cae-ats-prod-cin-01 `
   --hostname ats.harsingh.com --validation-method CNAME `
-  --certificate-name mc-ats-harsingh-com
+  --certificate-name cert-ats-prod-cin-01
 ```
 
 Issuance takes a few minutes; afterwards `https://ats.harsingh.com` serves the
 site. The route config's default FQDN keeps working alongside it.
-
-## Networking
-
-```
-ats-vnet 10.0.0.0/16
-├── snet-aca  10.0.0.0/21   Container Apps environment (delegated to Microsoft.App/environments)
-└── snet-pe   10.0.8.0/27   private endpoint → Cosmos DB (Sql)
-private DNS zone privatelink.documents.azure.com, linked to the VNet
-```
-
-- Cosmos has **public network access disabled**: only the VNet reaches its data
-  plane. The apps still use the normal `*.documents.azure.com` endpoint — inside
-  the VNet the private DNS zone resolves it to the endpoint's private IP
-  (`terraform output cosmos_private_ip`).
-- Portal **Data Explorer** from your laptop is blocked; Terraform is not
-  (databases/containers go through the ARM control plane).
-- The only public ingress is the route config; all four apps are internal-only.
-- Changing the environment's subnet **recreates the environment** — new default
-  domain, so the custom domain CNAME must be repointed and its managed
-  certificate recreated. The webapp image needs no rebuild (relative /api URLs).
-
-Check private resolution from inside an app:
-
-```powershell
-az containerapp exec -n ats-candidate -g ats-rg --command "getent hosts <cosmos-account>.documents.azure.com"
-# expect 10.0.8.x
-```
 
 ## 7. Tear down (stop all billing)
 
@@ -257,7 +242,6 @@ Destroying also frees your subscription's single Cosmos free-tier slot.
 | Cosmos 3×400 RU/s | free tier covers 1000 RU/s → ~200 RU/s billed ≈ **$12/mo** |
 | Container Apps ×4 | consumption plan + scale-to-zero → pennies at learning traffic |
 | ACR Basic | ~**$5/mo** |
-| Cosmos private endpoint + private DNS zone | ~**$8/mo** |
 | Log Analytics | negligible at this volume |
 
 `terraform destroy` after each session keeps a month well under a few dollars.
@@ -266,7 +250,7 @@ Destroying also frees your subscription's single Cosmos free-tier slot.
 
 | Terraform resource | Where to look in the portal |
 |---|---|
-| `azurerm_container_app_environment.main` | Container Apps Environments → ats-env |
+| `azurerm_container_app_environment.main` | Container Apps Environments → cae-ats-prod-cin-01 |
 | `azurerm_container_app.*` | Container Apps → each app → Revisions, Log stream, Ingress |
 | `azurerm_cosmosdb_account.main` | Azure Cosmos DB → Data Explorer |
 | `azurerm_container_registry.main` | Container registries → Repositories (your 4 images) |
