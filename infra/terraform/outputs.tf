@@ -18,6 +18,11 @@ output "cosmos_endpoint" {
   value = azurerm_cosmosdb_account.main.endpoint
 }
 
+# What the Cosmos hostname should resolve to from inside the environment.
+output "cosmos_private_ip" {
+  value = azurerm_private_endpoint.cosmos.private_service_connection[0].private_ip_address
+}
+
 # The single public API entry point (environment rule-based routing FQDN).
 output "api_url" {
   value = local.api_url

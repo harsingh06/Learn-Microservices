@@ -149,8 +149,9 @@ to zero and cold-start on demand. That's the cost/latency trade-off — set
 `min_replicas = 1` in `terraform.tfvars` if it annoys you.
 
 Then open `webapp_url` in a browser and click through: create a candidate, a job,
-apply, change the application status. Check the documents in the portal:
-Cosmos account → Data Explorer → each service's own database.
+apply, change the application status. Checking the documents in the portal's
+Data Explorer no longer works from outside the VNet (Cosmos is private — see
+[Networking](#networking)); verify through the API instead.
 
 Logs: portal → Container App → **Log stream** (live), or Logs (Log Analytics):
 
@@ -160,15 +161,13 @@ ContainerAppConsoleLogs_CL | where ContainerAppName_s == "ats-application" | tak
 
 ## 6. Shipping a code change
 
-Images are immutable; roll forward by tag:
+Push to `main` and the service's pipeline builds `<service>:<git sha>` and rolls
+it out with `az containerapp update`. To redeploy without a code change (e.g.
+after the environment is recreated), run the workflow manually:
+`gh workflow run candidate-service.yml` (likewise job/application/webapp).
 
-```powershell
-az acr build -r <acr_name> -t candidate-service:v2 src/CandidateService
-# set image_tag = "v2" in terraform.tfvars, then:
-terraform apply    # updates the apps' template → new revision rolls out
-```
-
-(One tag for all four apps keeps it simple; per-service tags are a later refinement.)
+`image_tag` in Terraform is only the **initial** image when an app is first
+created — the apps `ignore_changes` on the image, so bumping it later does nothing.
 
 ## Custom domain for the webapp (optional)
 
@@ -204,6 +203,33 @@ az containerapp hostname bind -n ats-webapp -g ats-rg `
 Certificate issuance takes a few minutes; afterwards `https://ats.harsingh.com`
 serves the webapp. The default FQDN keeps working alongside it.
 
+## Networking
+
+```
+ats-vnet 10.0.0.0/16
+├── snet-aca  10.0.0.0/23   Container Apps environment (not delegated — consumption-only env, /23 minimum)
+└── snet-pe   10.0.2.0/27   private endpoint → Cosmos DB (Sql)
+private DNS zone privatelink.documents.azure.com, linked to the VNet
+```
+
+- Cosmos has **public network access disabled**: only the VNet reaches its data
+  plane. The apps still use the normal `*.documents.azure.com` endpoint — inside
+  the VNet the private DNS zone resolves it to the endpoint's private IP
+  (`terraform output cosmos_private_ip`).
+- Portal **Data Explorer** from your laptop is blocked; Terraform is not
+  (databases/containers go through the ARM control plane).
+- Ingress is unchanged: the webapp and the API route config stay public.
+- Changing the environment's subnet **recreates the environment** — new default
+  domain, so `API_URL` must be updated, the webapp rebuilt, and the custom
+  domain CNAME repointed.
+
+Check private resolution from inside an app:
+
+```powershell
+az containerapp exec -n ats-candidate -g ats-rg --command "getent hosts <cosmos-account>.documents.azure.com"
+# expect 10.0.2.x
+```
+
 ## 7. Tear down (stop all billing)
 
 ```powershell
@@ -220,6 +246,7 @@ Destroying also frees your subscription's single Cosmos free-tier slot.
 | Cosmos 3×400 RU/s | free tier covers 1000 RU/s → ~200 RU/s billed ≈ **$12/mo** |
 | Container Apps ×4 | consumption plan + scale-to-zero → pennies at learning traffic |
 | ACR Basic | ~**$5/mo** |
+| Cosmos private endpoint + private DNS zone | ~**$8/mo** |
 | Log Analytics | negligible at this volume |
 
 `terraform destroy` after each session keeps a month well under a few dollars.

@@ -14,6 +14,8 @@ on:
       - "tests/JobService.Tests/**"
       - ".github/workflows/job-service.yml"
       - ".github/workflows/service-pipeline.yml"
+  # Manual redeploy of the current main (e.g. after the environment is recreated).
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -29,5 +31,5 @@ jobs:
       service-name: JobService
       image-name: job-service
       app-name: ats-job
-      deploy: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      deploy: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
     secrets: inherit

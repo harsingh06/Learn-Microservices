@@ -12,6 +12,11 @@ resource "azurerm_cosmosdb_account" "main" {
   # Only ONE free-tier account is allowed per subscription; apply fails if taken.
   free_tier_enabled = true
 
+  # Data plane reachable ONLY through the private endpoint (network.tf). The
+  # portal's Data Explorer from your laptop stops working. Terraform still
+  # works: databases/containers are managed via the ARM control plane.
+  public_network_access_enabled = false
+
   consistency_policy {
     consistency_level = "Session"
   }
