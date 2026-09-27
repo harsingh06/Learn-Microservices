@@ -207,8 +207,8 @@ serves the webapp. The default FQDN keeps working alongside it.
 
 ```
 ats-vnet 10.0.0.0/16
-├── snet-aca  10.0.0.0/23   Container Apps environment (not delegated — consumption-only env, /23 minimum)
-└── snet-pe   10.0.2.0/27   private endpoint → Cosmos DB (Sql)
+├── snet-aca  10.0.0.0/21   Container Apps environment (delegated to Microsoft.App/environments)
+└── snet-pe   10.0.8.0/27   private endpoint → Cosmos DB (Sql)
 private DNS zone privatelink.documents.azure.com, linked to the VNet
 ```
 
@@ -227,7 +227,7 @@ Check private resolution from inside an app:
 
 ```powershell
 az containerapp exec -n ats-candidate -g ats-rg --command "getent hosts <cosmos-account>.documents.azure.com"
-# expect 10.0.2.x
+# expect 10.0.8.x
 ```
 
 ## 7. Tear down (stop all billing)
