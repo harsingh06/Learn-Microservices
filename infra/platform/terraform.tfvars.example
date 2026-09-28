@@ -6,6 +6,5 @@ subscription_id = "00000000-0000-0000-0000-000000000000"
 # environment = "prod"
 # instance    = "01"
 
-# Flip to true AFTER pushing images to ACR (DEPLOY.md step 4).
-deploy_apps = false
-image_tag   = "v1"
+# The site's hostname, held by Front Door (DEPLOY.md, custom domain).
+# custom_domain = "ats.harsingh.com"

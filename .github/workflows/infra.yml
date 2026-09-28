@@ -1,4 +1,5 @@
-# Infrastructure pipeline: only runs when Terraform files change.
+# Platform pipeline (infra/platform): only runs when its Terraform changes. The
+# container apps are NOT here — each service pipeline applies its own stack.
 # PRs get a plan (posted as a comment on the PR); pushes to main apply.
 # Auth is OIDC via the ARM_* env vars — the azurerm/azapi providers and the
 # backend pick them up directly, no azure/login step needed.
@@ -8,11 +9,11 @@ on:
   push:
     branches: [main]
     paths:
-      - "infra/terraform/**"
+      - "infra/platform/**"
       - ".github/workflows/infra.yml"
   pull_request:
     paths:
-      - "infra/terraform/**"
+      - "infra/platform/**"
       - ".github/workflows/infra.yml"
   # Manual trigger for config-only changes (e.g. a repo variable changed).
   workflow_dispatch:
@@ -29,13 +30,12 @@ env:
   ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   ARM_USE_OIDC: "true"
   TF_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-  TF_VAR_deploy_apps: "true"
-  # Empty until the DNS records exist; then set the repo variable (see DEPLOY.md).
-  TF_VAR_webapp_custom_domain: ${{ vars.WEBAPP_CUSTOM_DOMAIN }}
+  # The site hostname, held by Front Door (see DEPLOY.md, custom domain).
+  TF_VAR_custom_domain: ${{ vars.WEBAPP_CUSTOM_DOMAIN }}
 
 defaults:
   run:
-    working-directory: infra/terraform
+    working-directory: infra/platform
 
 jobs:
   plan:
@@ -62,7 +62,7 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: config
-          scan-ref: infra/terraform
+          scan-ref: infra
           severity: CRITICAL,HIGH
           exit-code: "1"
           format: table
@@ -72,7 +72,7 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: config
-          scan-ref: infra/terraform
+          scan-ref: infra
           format: sarif
           output: trivy-iac.sarif
 
@@ -98,7 +98,7 @@ jobs:
             const fs = require('fs');
             const marker = '<!-- terraform-plan -->';
             const limit = 60000; // GitHub rejects comments over ~65k characters
-            let plan = fs.readFileSync('infra/terraform/plan.txt', 'utf8');
+            let plan = fs.readFileSync('infra/platform/plan.txt', 'utf8');
             if (plan.length > limit) {
               plan = plan.slice(0, limit) + '\n\n... truncated — see the job log for the full plan ...';
             }

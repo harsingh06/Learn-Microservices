@@ -1,4 +1,7 @@
-# Core infrastructure: resource group, logs, registry, identity, ACA environment.
+# Platform stack: everything SHARED or STATEFUL — resource group, logs, registry,
+# identity, the Container Apps environment, Cosmos (account + every database),
+# routing (routing.tf) and the edge (frontdoor.tf). The container apps are NOT
+# here: each service owns its app in src/<Service>/infra.
 
 # Naming convention: <type>-<workload>-<environment>-<region>-<instance>, with
 # type abbreviations from Microsoft's Cloud Adoption Framework. Every resource
@@ -23,9 +26,15 @@ locals {
     environment    = "cae-${local.suffix}"
     cosmos         = "cosmos-${local.suffix}" # globally unique
     route_config   = "rt${local.flat}"        # ^[a-z][a-z0-9]*$, no hyphens
+    frontdoor      = "afd-${local.suffix}"
+    # The endpoint name is also the start of its global *.azurefd.net hostname.
+    frontdoor_endpoint = "fde-${local.suffix}"
+    waf_policy         = "fdfp${local.flat}" # letters and digits only
   }
 
   # Container app names, max 32 characters: ca-<workload>-<component>-<env>-<region>-<nn>.
+  # The apps themselves live in their service stacks (src/<Service>/infra), which
+  # take their name from the app_names output — the convention stays in one place.
   app_names = {
     for component in ["candidate", "job", "application", "webapp"] :
     component => "ca-${var.workload}-${component}-${var.environment}-${local.region}-${var.instance}"
@@ -79,7 +88,8 @@ resource "azurerm_role_assignment" "acr_pull" {
 }
 
 # No VNet: the environment uses Azure-managed networking. Ingress is public, but
-# only the route config is external — every app is internal-only (apps.tf).
+# only the route config is external — every app is internal-only (enforced by
+# infra/modules/container-app-service).
 resource "azurerm_container_app_environment" "main" {
   name                       = local.names.environment
   location                   = azurerm_resource_group.main.location
