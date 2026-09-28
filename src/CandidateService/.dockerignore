@@ -1,2 +1,5 @@
 bin
 obj
+
+# Terraform for this service's app — not part of the image.
+infra/

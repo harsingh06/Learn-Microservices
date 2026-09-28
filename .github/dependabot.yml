@@ -37,7 +37,13 @@ updates:
         patterns: ["*"]
 
   - package-ecosystem: terraform
-    directory: "/infra/terraform"
+    directories:
+      - "/infra/platform"
+      - "/infra/modules/container-app-service"
+      - "/src/CandidateService/infra"
+      - "/src/JobService/infra"
+      - "/src/ApplicationService/infra"
+      - "/src/WebApp/infra"
     schedule:
       interval: weekly
     groups:

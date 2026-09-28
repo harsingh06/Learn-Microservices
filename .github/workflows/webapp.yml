@@ -9,16 +9,26 @@ on:
     paths:
       - "src/WebApp/**"
       - ".github/workflows/webapp.yml"
+      - "infra/modules/**"
   pull_request:
     paths:
       - "src/WebApp/**"
       - ".github/workflows/webapp.yml"
+      - "infra/modules/**"
   # Manual redeploy of the current main (e.g. after the environment is recreated).
   workflow_dispatch:
 
 permissions:
   contents: read
   id-token: write
+
+# OIDC for Terraform (azurerm provider + backend + the platform's remote state).
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_USE_OIDC: "true"
+  TF_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
 jobs:
   build:
@@ -44,10 +54,44 @@ jobs:
       - name: Typecheck and build
         run: npm run build
 
+  # PRs: show what merging would do to the webapp's app (fmt, validate, plan).
+  infra-plan:
+    # Dependabot PRs run without secrets, so they cannot log in to Azure to plan.
+    if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/WebApp/infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Format check
+        run: terraform fmt -check -recursive
+
+      - name: Init
+        run: terraform init -input=false
+
+      - name: Validate
+        run: terraform validate
+
+      # The image tag is illustrative: the real deploy uses the merge commit's SHA.
+      - name: Plan
+        run: |
+          terraform plan -no-color -input=false -lock=false \
+            -var image=${{ vars.ACR_LOGIN_SERVER }}/webapp:${{ github.event.pull_request.head.sha }} \
+            > plan.txt
+          { echo '### Terraform plan — WebApp'; echo '```'; cat plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
   deploy:
     needs: build
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # One deploy at a time; a later merge waits instead of racing for the state lock.
+    concurrency:
+      group: deploy-webapp
+      cancel-in-progress: false
     permissions:
       id-token: write
       contents: read
@@ -102,9 +146,12 @@ jobs:
       - name: Push image
         run: docker push "$IMAGE"
 
-      - name: Roll out new revision
+      - uses: hashicorp/setup-terraform@v3
+
+      # The webapp's own stack (src/WebApp/infra) owns its container app, image
+      # included — this rolls out a new revision with the new image.
+      - name: Deploy (terraform apply)
+        working-directory: src/WebApp/infra
         run: |
-          az containerapp update \
-            --name ca-ats-webapp-prod-cin-01 \
-            --resource-group ${{ vars.RESOURCE_GROUP }} \
-            --image "$IMAGE"
+          terraform init -input=false
+          terraform apply -auto-approve -input=false -no-color -var image="$IMAGE"

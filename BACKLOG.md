@@ -48,13 +48,31 @@ Each item notes *why* it was deferred so we remember the trade-off we accepted.
         dev-router :5104 on different origins). Either make compose same-origin
         too (dev-router also serves `/` → webapp) and drop CORS from the services,
         or restrict it to the local origins instead of AllowAnyOrigin.
-  - [ ] The managed certificate is created outside Terraform (`az containerapp env
-        certificate create`); confirm it renews while bound to a route config.
+  - [x] **Azure Front Door (Standard)** in front of the route config: holds
+        `ats.harsingh.com` + its managed certificate (in Terraform, replacing the
+        manual `az containerapp env certificate create`), WAF with a per-IP rate
+        limit on `/api`, edge caching of `/assets/*`. ~$40/mo.
+    - [ ] **Origin bypass:** the route config's own FQDN is still public, so the
+          WAF can be skipped by calling it directly. Options: each app rejects
+          requests without our `X-Azure-FDID` header (code change), or Premium +
+          Private Link (~$330/mo).
+    - [ ] Managed OWASP WAF rule set — Premium only.
   - [ ] When auth/rate-limiting arrive: Azure API Management in front, or
         resurrect the YARP gateway (git history has it: commit `0681f7a`).
 - [ ] **Authentication/authorization** (Entra ID) — after the gateway exists.
-- [x] **Deployment to Azure Container Apps via Terraform** — done, see `infra/terraform/`
+- [x] **Deployment to Azure Container Apps via Terraform** — done, see `infra/platform/`
       and `DEPLOY.md`. Follow-ups now unlocked:
+  - [x] **Platform / service split.** `infra/platform` owns everything shared or
+        stateful (Cosmos account AND databases, route config, Front Door); each
+        `src/<Service>/infra` owns only its container app, via the shared module
+        `infra/modules/container-app-service`. Removed `deploy_apps`, the `v1`
+        image and `ignore_changes`: the pipeline passes the image into the service
+        stack, so each app has one writer. A new environment bootstraps
+        platform -> services -> platform (route rules need the apps to exist).
+    - [ ] After the first successful apply on main: delete
+          `infra/platform/migrations.tf` and every `src/*/infra/imports.tf`.
+    - [ ] One identity per service with rights scoped to its own app, instead of
+          the shared CI identity (Contributor on the subscription).
   - [x] Remote Terraform state (Azure Storage backend `ats-tfstate-rg`).
   - [x] Per-service image tags — pipelines deploy `<service>:<git sha>`.
   - [ ] Cosmos data-plane auth via managed identity instead of the account key
@@ -99,15 +117,10 @@ Each item notes *why* it was deferred so we remember the trade-off we accepted.
   - [x] Triaged Trivy IaC findings (53 checks apply, all passing) and raised
         IaC enforcement to HIGH+CRITICAL. If it stays clean, MEDIUM is the
         next notch — 27 MEDIUM checks currently pass.
-  - [ ] **Infra apply can revert a concurrent image deploy.** `ignore_changes` on
-        the image only stops Terraform *planning* image changes; when it updates an
-        app for any other reason, azurerm PUTs the whole template with the image
-        from its (possibly seconds-stale) refresh. Hit on 2026-09-27: a merge
-        touching both `apps.tf` and `src/WebApp` left the webapp on the previous
-        image. Workaround: rerun the app's workflow after infra. Fix options: a
-        shared `concurrency` group on the apply/deploy jobs (beware: GitHub keeps
-        only ONE pending run per group and cancels older pending ones), or the
-        post-deploy smoke test asserting the running image tag = commit SHA.
+  - [x] **Infra apply could revert a concurrent image deploy** (hit 2026-09-27:
+        azurerm PUTs the whole template with a stale image despite
+        `ignore_changes`). Fixed by the platform/service split: the platform no
+        longer manages apps, so each app has exactly one writer.
   - [ ] GitHub environment protection rule (manual approval gate) before apply/deploy.
   - [ ] Required approvals > 0 on the branch protection rule if anyone else joins.
 - [ ] **AKS** as the second deployment target (compare against ACA).
@@ -124,15 +137,14 @@ Each item notes *why* it was deferred so we remember the trade-off we accepted.
 
 - [ ] **Split into separate repos** (platform/infra repo + one repo per service).
       Do it in two steps, the boundary first:
-  1. In this repo: split Terraform into `infra/platform` (RG, VNet, ACA environment,
-     ACR, Log Analytics, Cosmos *account* + private endpoint, route config) and a
-     per-service stack (its container app, its Cosmos *database*), each with its own
-     state; add `CODEOWNERS`. Pairs naturally with multi-env.
+  1. ~~Split Terraform into `infra/platform` and per-service stacks~~ — done (see
+     Phase 4). Still to do here: `CODEOWNERS` per folder.
   2. Only then extract folders with `git filter-repo` (keeps history) and move
      `service-pipeline.yml` to a shared repo as a versioned reusable workflow.
   Deferred: one person owns everything, and per-service pipelines already give
   independent deploys. Costs of splitting: coordinated multi-repo PRs for
   cross-cutting changes, per-repo OIDC credentials/secrets/branch protection/
   Dependabot, a new home for local-dev compose, and API contracts become mandatory.
-  Open questions: does a service own its container app definition or only its image?
-  Who owns the shared route config?
+  Settled by the split: a service owns its container app definition; the platform
+  owns data, routing and the edge. With separate repos the module would move to a
+  git-tagged source (`?ref=v1.2.0`).

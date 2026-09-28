@@ -1,6 +1,10 @@
 # Reusable pipeline shared by the three .NET services.
 # Each service's thin workflow calls this with its own names, so a change to
 # one service builds, tests, and deploys ONLY that service.
+#
+# Deploying = `terraform apply` of the service's own stack (src/<Service>/infra)
+# with the image just pushed. That stack owns the service's container app —
+# image included — so no other pipeline ever writes to it.
 name: service-pipeline
 
 on:
@@ -14,14 +18,18 @@ on:
         description: ACR repository name, e.g. candidate-service
         required: true
         type: string
-      app-name:
-        description: Azure Container App name, e.g. ca-ats-candidate-prod-cin-01
-        required: true
-        type: string
       deploy:
         description: Deploy to Azure after a green build (push to main only)
         required: true
         type: boolean
+
+# OIDC for Terraform (azurerm provider + backend + the platform's remote state).
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_USE_OIDC: "true"
+  TF_VAR_subscription_id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
 jobs:
   build-and-test:
@@ -59,10 +67,48 @@ jobs:
             -title:"${{ inputs.service-name }}"
           cat coverage-report/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
 
+  # PRs: show what merging would do to this service's app (fmt, validate, plan).
+  infra-plan:
+    # Dependabot PRs run without secrets, so they cannot log in to Azure to plan.
+    if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: src/${{ inputs.service-name }}/infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Format check
+        run: terraform fmt -check -recursive
+
+      - name: Init
+        run: terraform init -input=false
+
+      - name: Validate
+        run: terraform validate
+
+      # The image tag is illustrative: the real deploy uses the merge commit's SHA.
+      - name: Plan
+        run: |
+          terraform plan -no-color -input=false -lock=false \
+            -var image=${{ vars.ACR_LOGIN_SERVER }}/${{ inputs.image-name }}:${{ github.event.pull_request.head.sha }} \
+            > plan.txt
+          { echo '### Terraform plan — ${{ inputs.service-name }}'; echo '```'; cat plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
   deploy:
     needs: build-and-test
     if: inputs.deploy
     runs-on: ubuntu-latest
+    # One deploy per service at a time; a later merge waits instead of racing
+    # the earlier one for the state lock.
+    concurrency:
+      group: deploy-${{ inputs.image-name }}
+      cancel-in-progress: false
     permissions:
       id-token: write # OIDC token for azure/login — no stored credentials
       contents: read
@@ -113,9 +159,12 @@ jobs:
       - name: Push image
         run: docker push "$IMAGE"
 
-      - name: Roll out new revision
+      - uses: hashicorp/setup-terraform@v3
+
+      # Rolls out a new revision with the new image (and any change to the
+      # service's app definition in the same commit).
+      - name: Deploy (terraform apply)
+        working-directory: src/${{ inputs.service-name }}/infra
         run: |
-          az containerapp update \
-            --name ${{ inputs.app-name }} \
-            --resource-group ${{ vars.RESOURCE_GROUP }} \
-            --image "$IMAGE"
+          terraform init -input=false
+          terraform apply -auto-approve -input=false -no-color -var image="$IMAGE"

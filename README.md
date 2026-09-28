@@ -40,11 +40,12 @@ validates candidate/job existence with synchronous REST calls and snapshots
 `candidateName`/`jobTitle` into each application.
 
 All browser API traffic goes to **one API origin** with `/api/<resource>/*` paths.
-In Azure this is **ACA rule-based routing** (a preview, environment-level
-`httpRouteConfig` managed via the azapi Terraform provider) — the platform routes
-each prefix to the owning app, and `/` to the webapp, under one hostname
-(`ats.harsingh.com`). All four apps are **internal-only**; the site and its APIs
-share one origin, so the browser needs no CORS in Azure. Locally the same role is
+In Azure, **Azure Front Door** (Standard) holds the hostname (`ats.harsingh.com`),
+its certificate and a WAF, and forwards to **ACA rule-based routing** (a preview,
+environment-level `httpRouteConfig` managed via the azapi Terraform provider),
+which routes each prefix to the owning app and `/` to the webapp. All four apps are
+**internal-only**; the site and its APIs share one origin, so the browser needs
+no CORS in Azure. Locally the same role is
 played by a tiny nginx `dev-router` container (compose) or Vite's dev proxy
 (`npm run dev`) — neither is ever deployed. Compose still serves the webapp and
 the dev-router on different ports, which is why the services keep a CORS policy.
@@ -123,6 +124,10 @@ src/
   JobService/            same layout
   ApplicationService/    same layout + Clients/ (typed HttpClients for sync checks)
   WebApp/                React 19 + TypeScript (Vite), four pages, no state library
+  */infra/               each service's own Terraform stack: its container app
+infra/
+  platform/              Terraform: shared + stateful Azure resources, routing, Front Door
+  modules/container-app-service/   the standard for one container app (used by src/*/infra)
 local/dev-router/        nginx config: compose-only stand-in for ACA routing
 tests/
   *.Tests/               xUnit + NSubstitute, one test project per service
@@ -150,10 +155,16 @@ To point a service at a real Azure Cosmos DB account, set `Cosmos__Endpoint` and
 
 ## Deploying to Azure
 
-Terraform IaC for Azure Container Apps + real Cosmos DB lives in `infra/terraform/`.
-The full manual walkthrough (two-pass apply, `az acr build`, verification, teardown,
-costs) is in [DEPLOY.md](DEPLOY.md). Terraform state is remote (Azure Storage,
-`ats-tfstate-rg`), so local applies and the CI pipeline share one state.
+Terraform is split by ownership, each part with its own remote state (Azure
+Storage, `ats-tfstate-rg`):
+
+- `infra/platform/` — everything shared or stateful: environment, registry,
+  Cosmos (account + databases), route config, Front Door.
+- `src/<Service>/infra/` — that service's container app, built on the shared
+  module `infra/modules/container-app-service`.
+
+The walkthrough (bootstrap order, custom domain, teardown, costs) is in
+[DEPLOY.md](DEPLOY.md).
 
 ## CI/CD (GitHub Actions)
 
@@ -162,16 +173,15 @@ changing one service builds, tests, and deploys only that service:
 
 | Workflow | Triggers on | PR | Push to main |
 |---|---|---|---|
-| `candidate-service.yml` | `src/CandidateService/**` + its tests | format + build + test + coverage | + image → scan → ACR → `az containerapp update` |
+| `candidate-service.yml` | `src/CandidateService/**` + its tests + `infra/modules/**` | format + build + test + coverage + terraform plan | + image → scan → ACR → `terraform apply` (its own stack) |
 | `job-service.yml` / `application-service.yml` | same pattern | same | same |
-| `webapp.yml` | `src/WebApp/**` | lint + typecheck + build | + image → scan → deploy |
-| `infra.yml` | `infra/terraform/**` | fmt/validate/IaC scan/plan (posted as a PR comment) | terraform apply |
+| `webapp.yml` | `src/WebApp/**` + `infra/modules/**` | lint + typecheck + build + terraform plan | + image → scan → deploy |
+| `infra.yml` | `infra/platform/**` | fmt/validate/IaC scan/plan (posted as a PR comment) | terraform apply |
 | `codeql.yml` | everything (no path filter) + weekly | CodeQL for C# and TypeScript | same |
 
 The three service workflows are thin wrappers around the reusable
-`service-pipeline.yml`. Images are tagged with the commit SHA; Terraform ignores
-image changes on the container apps (`lifecycle.ignore_changes`), so Terraform
-owns the app's shape while pipelines own what's running in it. Azure auth is
+`service-pipeline.yml`. Images are tagged with the commit SHA and passed into the
+service's own Terraform stack, so each app has exactly one writer: its pipeline. Azure auth is
 passwordless (OIDC federated credentials — no secrets stored beyond IDs).
 
 ### Quality gates and security scanning
