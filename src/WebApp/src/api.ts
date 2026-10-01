@@ -1,4 +1,5 @@
 import type { ApplicationStatus, Candidate, Job, JobApplication } from './types'
+import { apiScopes, getAccessToken } from './auth/msal'
 
 // All API calls hit one base URL with /api/<resource>/* paths. In Azure the base
 // is empty — the webapp and the APIs share one origin (the route config); in
@@ -7,12 +8,29 @@ import type { ApplicationStatus, Candidate, Job, JobApplication } from './types'
 const API_BASE =
   import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? '' : 'http://localhost:5104')
 
+// Every API is its own token audience: pick the scope of the service a path belongs to.
+function scopeFor(url: string): string {
+  if (url.includes('/api/candidates')) return apiScopes.candidates
+  if (url.includes('/api/jobs')) return apiScopes.jobs
+  if (url.includes('/api/applications')) return apiScopes.applications
+  throw new Error(`No API scope configured for ${url}`)
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers)
+  headers.set('Authorization', `Bearer ${await getAccessToken(scopeFor(url))}`)
+
   let response: Response
   try {
-    response = await fetch(url, init)
+    response = await fetch(url, { ...init, headers })
   } catch {
     throw new Error(`Cannot reach ${API_BASE || 'the API'} — is the stack running?`)
+  }
+  if (response.status === 401) {
+    throw new Error('Your session has expired or the token was rejected — please sign out and in again.')
+  }
+  if (response.status === 403) {
+    throw new Error("You don't have permission to do that.")
   }
   if (!response.ok) {
     throw new Error(await readErrorMessage(response))

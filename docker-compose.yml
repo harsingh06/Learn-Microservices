@@ -35,6 +35,11 @@ services:
       # Service-to-service calls use the Docker network, not localhost.
       Services__CandidateApi: http://candidate-service:8080
       Services__JobApi: http://job-service:8080
+      # On-Behalf-Of needs ApplicationService's own credential: locally, the client
+      # secret from infra/identity, read from the git-ignored root .env (see
+      # .env.example and AUTH.md). Unset = everything works except submitting
+      # applications (the token exchange fails).
+      AzureAd__ClientCredentials__0__ClientSecret: ${ATS_APPLICATION_CLIENT_SECRET:-}
     depends_on:
       - cosmos
       - candidate-service

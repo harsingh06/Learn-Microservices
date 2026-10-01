@@ -173,8 +173,10 @@ resource "azurerm_container_app" "application" {
   tags                         = local.tags
 
   identity {
-    type         = "UserAssigned"
-    identity_ids = [azurerm_user_assigned_identity.apps.id]
+    type = "UserAssigned"
+    # apps: pulls the image from ACR. application: this service's own identity
+    # for the On-Behalf-Of exchange (see azurerm_user_assigned_identity.application).
+    identity_ids = [azurerm_user_assigned_identity.apps.id, azurerm_user_assigned_identity.application.id]
   }
 
   registry {
@@ -224,6 +226,16 @@ resource "azurerm_container_app" "application" {
       env {
         name  = "Services__JobApi"
         value = local.job_internal_url
+      }
+      # On-Behalf-Of credential in Azure: the managed identity, not a secret.
+      # (appsettings.json's ClientCredentials[0] is a client secret for local dev.)
+      env {
+        name  = "AzureAd__ClientCredentials__0__SourceType"
+        value = "SignedAssertionFromManagedIdentity"
+      }
+      env {
+        name  = "AzureAd__ClientCredentials__0__ManagedIdentityClientId"
+        value = azurerm_user_assigned_identity.application.client_id
       }
     }
   }

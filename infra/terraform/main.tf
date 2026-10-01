@@ -20,6 +20,7 @@ locals {
     log_analytics  = "log-${local.suffix}"
     registry       = "acr${local.flat}" # alphanumeric only, globally unique
     identity_apps  = "id-${var.workload}-apps-${var.environment}-${local.region}-${var.instance}"
+    identity_app   = "id-${var.workload}-application-${var.environment}-${local.region}-${var.instance}"
     environment    = "cae-${local.suffix}"
     cosmos         = "cosmos-${local.suffix}" # globally unique
     route_config   = "rt${local.flat}"        # ^[a-z][a-z0-9]*$, no hyphens
@@ -76,6 +77,19 @@ resource "azurerm_role_assignment" "acr_pull" {
   scope                = azurerm_container_registry.main.id
   role_definition_name = "AcrPull"
   principal_id         = azurerm_user_assigned_identity.apps.principal_id
+}
+
+# ApplicationService's OWN identity, used only to sign in to Entra ID as the
+# "ATS Application API" app for the On-Behalf-Of token exchange (AUTH.md). The
+# app registration trusts THIS identity through a federated credential
+# (infra/identity), so no secret exists in Azure. Separate from the shared
+# identity above on purpose: a federated credential on the shared one would let
+# every app act as ApplicationService.
+resource "azurerm_user_assigned_identity" "application" {
+  name                = local.names.identity_app
+  location            = azurerm_resource_group.main.location
+  resource_group_name = azurerm_resource_group.main.name
+  tags                = local.tags
 }
 
 # No VNet: the environment uses Azure-managed networking. Ingress is public, but

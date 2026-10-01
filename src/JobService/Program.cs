@@ -1,3 +1,4 @@
+using JobService.Auth;
 using JobService.Data;
 using JobService.Endpoints;
 using Microsoft.Azure.Cosmos;
@@ -30,13 +31,23 @@ builder.Services.AddSingleton(sp =>
 });
 builder.Services.AddSingleton<IJobRepository, CosmosJobRepository>();
 
+// Every request needs an Entra ID access token for this API; endpoints add role
+// policies on top (Auth/AuthSetup.cs, AUTH.md).
+builder.Services.AddAtsAuthentication(builder.Configuration);
+builder.Services.AddAtsAuthorization();
+
 var app = builder.Build();
 
+// CORS first, so browser preflight requests (which never carry a token) get answered.
 app.UseCors();
-app.MapOpenApi();
-app.MapScalarApiReference(); // interactive API docs at /scalar/v1
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Docs and the health probe stay public; everything else is protected (fallback policy).
+app.MapOpenApi().AllowAnonymous();
+app.MapScalarApiReference().AllowAnonymous(); // interactive API docs at /scalar/v1
 app.MapJobEndpoints();
-app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "job-service" }));
+app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "job-service" })).AllowAnonymous();
 
 await CosmosInitializer.EnsureCreatedAsync(
     app.Services.GetRequiredService<CosmosClient>(),

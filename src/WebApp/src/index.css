@@ -126,3 +126,20 @@ th {
 .status-inreview { background: #fff3bf; color: #997404; }
 .status-accepted { background: #d3f9d8; color: #2b8a3e; }
 .status-rejected { background: #ffe3e3; color: #c92a2a; }
+
+/* Signed-in user and sign-out, pushed to the right of the nav bar. */
+nav .user {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #b8b8d0;
+  font-size: 0.9rem;
+}
+
+/* Shown until the user has signed in with Entra ID. */
+.signin {
+  max-width: 28rem;
+  margin: 15vh auto 0;
+  text-align: center;
+}

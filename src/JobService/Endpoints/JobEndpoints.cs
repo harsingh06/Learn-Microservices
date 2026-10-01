@@ -1,3 +1,4 @@
+using JobService.Auth;
 using JobService.Data;
 using JobService.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -10,11 +11,12 @@ public static class JobEndpoints
 {
     public static void MapJobEndpoints(this IEndpointRouteBuilder app)
     {
+        // Authorization per route (AUTH.md): both roles read, only Recruiters write.
         var group = app.MapGroup("/jobs").WithTags("Jobs");
-        group.MapGet("/", List);
-        group.MapGet("/{id}", GetById);
-        group.MapPost("/", Create);
-        group.MapPut("/{id}", Update);
+        group.MapGet("/", List).RequireAuthorization(AtsPolicies.Read);
+        group.MapGet("/{id}", GetById).RequireAuthorization(AtsPolicies.Read);
+        group.MapPost("/", Create).RequireAuthorization(AtsPolicies.ManageJobs);
+        group.MapPut("/{id}", Update).RequireAuthorization(AtsPolicies.ManageJobs);
     }
 
     public static async Task<Ok<IReadOnlyList<Job>>> List(IJobRepository repository)

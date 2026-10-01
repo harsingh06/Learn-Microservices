@@ -6,6 +6,10 @@ dist/
 .vs/
 *.user
 
+# Local secrets for docker compose (template: .env.example). Root only — the web
+# app's src/WebApp/.env holds public identifiers and IS committed.
+/.env
+
 # Terraform (keep .terraform.lock.hcl tracked)
 .terraform/
 *.tfstate

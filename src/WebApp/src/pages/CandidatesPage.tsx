@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { createCandidate, listCandidates } from '../api'
+import { useRoles } from '../auth/useRoles'
 import type { Candidate } from '../types'
 
 export default function CandidatesPage() {
+  const { isRecruiter } = useRoles()
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [search, setSearch] = useState('')
   const [fullName, setFullName] = useState('')
@@ -40,20 +42,23 @@ export default function CandidatesPage() {
       <h1>Candidates</h1>
       {error && <p className="error">{error}</p>}
 
-      <form className="row" onSubmit={handleCreate}>
-        <input
-          placeholder="Full name"
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-        />
-        <input
-          placeholder="Email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <button type="submit">Add candidate</button>
-      </form>
+      {/* Only Recruiters create — the API returns 403 for anyone else anyway. */}
+      {isRecruiter && (
+        <form className="row" onSubmit={handleCreate}>
+          <input
+            placeholder="Full name"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+          />
+          <input
+            placeholder="Email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <button type="submit">Add candidate</button>
+        </form>
+      )}
 
       <div className="row">
         <input

@@ -52,7 +52,26 @@ Each item notes *why* it was deferred so we remember the trade-off we accepted.
         certificate create`); confirm it renews while bound to a route config.
   - [ ] When auth/rate-limiting arrive: Azure API Management in front, or
         resurrect the YARP gateway (git history has it: commit `0681f7a`).
-- [ ] **Authentication/authorization** (Entra ID) — after the gateway exists.
+- [x] **Authentication/authorization** (Entra ID) — see `AUTH.md`. Users sign in
+      (MSAL); every service validates tokens for its own audience and enforces
+      roles (`Recruiter`, `HiringManager`) per route; ApplicationService calls
+      Candidate/Job with **On-Behalf-Of** tokens (user + calling app, one audience
+      each). Entra objects in `infra/identity` (applied manually — CI has no Graph
+      permissions). Done without a gateway: each service is its own enforcement point.
+  - [ ] **Service identity (client credentials)** for callers without a user — the
+        future NotificationWorker (Phase 2) can't do On-Behalf-Of.
+  - [ ] Per-environment app registrations once dev/test/prod exist (today one set
+        serves all; IDs are committed in appsettings + `src/WebApp/.env`).
+  - [ ] Key Vault for ApplicationService's local-dev client secret (today: root
+        `.env` / user-secrets, and the Terraform state), with rotation.
+  - [ ] Scalar "Authorize" (OAuth2 PKCE) so the API docs can call protected endpoints.
+  - [ ] Map a downstream 401/403 inside ApplicationService to a clear error (today a
+        500) — on `feat/resilience` that's `Clients/DependencyCall.cs`.
+  - [ ] **Merge notes:** `feat/contract-tests` — the Pact provider tests host the
+        endpoints, which now require auth: give the provider host the test
+        authentication scheme (as in `tests/*/Auth/`). `feat/resilience` — same
+        `AddHttpClient` lines in ApplicationService's `Program.cs`: keep both the
+        resilience and the On-Behalf-Of handler.
 - [x] **Deployment to Azure Container Apps via Terraform** — done, see `infra/terraform/`
       and `DEPLOY.md`. Follow-ups now unlocked:
   - [x] Remote Terraform state (Azure Storage backend `ats-tfstate-rg`).

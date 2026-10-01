@@ -1,7 +1,14 @@
+# Every endpoint except /health needs an Entra ID access token for THIS API
+# (role: Recruiter or HiringManager). With the Azure CLI signed in as a user who has a role:
+#   az account get-access-token --scope <scope> --query accessToken -o tsv
+# where <scope> is api_scopes.candidate from: terraform -chdir=infra/identity output api_scopes
+# Tokens last about an hour.
+@token = paste-token-here
 @host = http://localhost:5101
 
 ### Create a candidate
 POST {{host}}/candidates
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -11,15 +18,19 @@ Content-Type: application/json
 
 ### List all candidates
 GET {{host}}/candidates
+Authorization: Bearer {{token}}
 
 ### Search candidates by name
 GET {{host}}/candidates?search=ada
+Authorization: Bearer {{token}}
 
 ### Get a candidate by id (replace the id)
 GET {{host}}/candidates/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{token}}
 
 ### Update a candidate (replace the id)
 PUT {{host}}/candidates/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {

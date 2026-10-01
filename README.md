@@ -57,6 +57,9 @@ when they arrive.
 - [.NET SDK 9.0](https://dotnet.microsoft.com/download/dotnet/9.0)
 - [Node.js 22+](https://nodejs.org/)
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- Sign-in uses **Microsoft Entra ID**: the app registrations must exist and the
+  IDs be filled in once — see [AUTH.md](AUTH.md) (roles, the On-Behalf-Of flow
+  between services, setup, troubleshooting).
 
 ## Option A — run everything with Docker Compose
 
