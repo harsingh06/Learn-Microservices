@@ -1,3 +1,4 @@
+using CandidateService.Auth;
 using CandidateService.Data;
 using CandidateService.Models;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -10,11 +11,12 @@ public static class CandidateEndpoints
 {
     public static void MapCandidateEndpoints(this IEndpointRouteBuilder app)
     {
+        // Authorization per route (AUTH.md): both roles read, only Recruiters write.
         var group = app.MapGroup("/candidates").WithTags("Candidates");
-        group.MapGet("/", List);
-        group.MapGet("/{id}", GetById);
-        group.MapPost("/", Create);
-        group.MapPut("/{id}", Update);
+        group.MapGet("/", List).RequireAuthorization(AtsPolicies.Read);
+        group.MapGet("/{id}", GetById).RequireAuthorization(AtsPolicies.Read);
+        group.MapPost("/", Create).RequireAuthorization(AtsPolicies.ManageCandidates);
+        group.MapPut("/{id}", Update).RequireAuthorization(AtsPolicies.ManageCandidates);
     }
 
     public static async Task<Ok<IReadOnlyList<Candidate>>> List(string? search, ICandidateRepository repository)

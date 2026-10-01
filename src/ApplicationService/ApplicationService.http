@@ -1,7 +1,14 @@
+# Every endpoint except /health needs an Entra ID access token for THIS API
+# (role: Recruiter or HiringManager). With the Azure CLI signed in as a user who has a role:
+#   az account get-access-token --scope <scope> --query accessToken -o tsv
+# where <scope> is api_scopes.application from: terraform -chdir=infra/identity output api_scopes
+# Tokens last about an hour.
+@token = paste-token-here
 @host = http://localhost:5103
 
 ### Submit an application (replace ids with real candidate/job ids)
 POST {{host}}/applications
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
@@ -11,15 +18,19 @@ Content-Type: application/json
 
 ### List all applications
 GET {{host}}/applications
+Authorization: Bearer {{token}}
 
 ### List applications for a candidate
 GET {{host}}/applications?candidateId=00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{token}}
 
 ### List applications for a job
 GET {{host}}/applications?jobId=00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{token}}
 
 ### Update application status (Submitted -> InReview -> Accepted | Rejected)
 PUT {{host}}/applications/00000000-0000-0000-0000-000000000000/status
+Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {

@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import { listApplications, listCandidates, listJobs, updateApplicationStatus } from '../api'
 import type { ApplicationStatus, Candidate, Job, JobApplication } from '../types'
 import { ALL_STATUSES } from '../types'
+import { useRoles } from '../auth/useRoles'
 
 export default function ApplicationsPage() {
+  const { isHiringManager } = useRoles()
   const [applications, setApplications] = useState<JobApplication[]>([])
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
@@ -66,7 +68,10 @@ export default function ApplicationsPage() {
 
       <table>
         <thead>
-          <tr><th>Candidate</th><th>Job</th><th>Status</th><th>Submitted</th><th>Change status</th></tr>
+          <tr>
+            <th>Candidate</th><th>Job</th><th>Status</th><th>Submitted</th>
+            {isHiringManager && <th>Change status</th>}
+          </tr>
         </thead>
         <tbody>
           {applications.map((a) => (
@@ -75,20 +80,23 @@ export default function ApplicationsPage() {
               <td>{a.jobTitle}</td>
               <td><span className={`status status-${a.status.toLowerCase()}`}>{a.status}</span></td>
               <td>{new Date(a.submittedAtUtc).toLocaleString()}</td>
-              <td>
-                <select
-                  value={a.status}
-                  onChange={(e) => void handleStatusChange(a, e.target.value as ApplicationStatus)}
-                >
-                  {ALL_STATUSES.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </td>
+              {/* Reviewing is the Hiring Manager's job — the API enforces it too. */}
+              {isHiringManager && (
+                <td>
+                  <select
+                    value={a.status}
+                    onChange={(e) => void handleStatusChange(a, e.target.value as ApplicationStatus)}
+                  >
+                    {ALL_STATUSES.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </td>
+              )}
             </tr>
           ))}
           {applications.length === 0 && (
-            <tr><td colSpan={5} className="empty">No applications yet.</td></tr>
+            <tr><td colSpan={isHiringManager ? 5 : 4} className="empty">No applications yet.</td></tr>
           )}
         </tbody>
       </table>

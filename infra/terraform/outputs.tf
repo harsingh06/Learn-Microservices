@@ -48,3 +48,10 @@ output "job_internal_url" {
 output "application_internal_url" {
   value = local.application_internal_url
 }
+
+# Feed this to infra/identity (variable application_managed_identity_principal_id)
+# to create the federated credential that lets ApplicationService do On-Behalf-Of
+# in Azure without a secret. See AUTH.md.
+output "application_identity_principal_id" {
+  value = azurerm_user_assigned_identity.application.principal_id
+}

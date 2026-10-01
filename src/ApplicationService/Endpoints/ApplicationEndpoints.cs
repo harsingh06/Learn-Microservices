@@ -1,3 +1,4 @@
+using ApplicationService.Auth;
 using ApplicationService.Clients;
 using ApplicationService.Data;
 using ApplicationService.Models;
@@ -11,11 +12,13 @@ public static class ApplicationEndpoints
 {
     public static void MapApplicationEndpoints(this IEndpointRouteBuilder app)
     {
+        // Authorization per route (AUTH.md): both roles read, Recruiters submit,
+        // Hiring Managers review.
         var group = app.MapGroup("/applications").WithTags("Applications");
-        group.MapGet("/", List);
-        group.MapGet("/{id}", GetById);
-        group.MapPost("/", Submit);
-        group.MapPut("/{id}/status", UpdateStatus);
+        group.MapGet("/", List).RequireAuthorization(AtsPolicies.Read);
+        group.MapGet("/{id}", GetById).RequireAuthorization(AtsPolicies.Read);
+        group.MapPost("/", Submit).RequireAuthorization(AtsPolicies.SubmitApplications);
+        group.MapPut("/{id}/status", UpdateStatus).RequireAuthorization(AtsPolicies.ReviewApplications);
     }
 
     public static async Task<Ok<IReadOnlyList<JobApplication>>> List(

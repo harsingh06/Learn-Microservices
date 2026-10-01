@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { createJob, listJobs } from '../api'
+import { useRoles } from '../auth/useRoles'
 import type { Job } from '../types'
 
 export default function JobsPage() {
+  const { isRecruiter } = useRoles()
   const [jobs, setJobs] = useState<Job[]>([])
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -41,20 +43,23 @@ export default function JobsPage() {
       <h1>Jobs</h1>
       {error && <p className="error">{error}</p>}
 
-      <form className="row" onSubmit={handleCreate}>
-        <input placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
-        <input
-          placeholder="Description"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-        />
-        <input
-          placeholder="Location (optional)"
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-        />
-        <button type="submit">Add job</button>
-      </form>
+      {/* Only Recruiters create — the API returns 403 for anyone else anyway. */}
+      {isRecruiter && (
+        <form className="row" onSubmit={handleCreate}>
+          <input placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
+          <input
+            placeholder="Description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+          <input
+            placeholder="Location (optional)"
+            value={location}
+            onChange={(e) => setLocation(e.target.value)}
+          />
+          <button type="submit">Add job</button>
+        </form>
+      )}
 
       <table>
         <thead>

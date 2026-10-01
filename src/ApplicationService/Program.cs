@@ -1,7 +1,9 @@
+using ApplicationService.Auth;
 using ApplicationService.Clients;
 using ApplicationService.Data;
 using ApplicationService.Endpoints;
 using Microsoft.Azure.Cosmos;
+using Microsoft.Identity.Web;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -31,19 +33,37 @@ builder.Services.AddSingleton(sp =>
 });
 builder.Services.AddSingleton<IApplicationRepository, CosmosApplicationRepository>();
 
+// Every request needs an Entra ID access token for this API; endpoints add role
+// policies on top (Auth/AuthSetup.cs, AUTH.md).
+builder.Services.AddAtsAuthentication(builder.Configuration);
+builder.Services.AddAtsAuthorization();
+
 // Typed HTTP clients for the sync existence checks against the owning services.
+// Each carries an On-Behalf-Of handler: before every call it exchanges the
+// signed-in user's token for one whose audience is THAT service (scopes in
+// DownstreamApis:*), so CandidateService / JobService authenticate the call —
+// and see the same user and roles. The client classes don't change.
 builder.Services.AddHttpClient<ICandidateClient, CandidateClient>(client =>
-    client.BaseAddress = new Uri(builder.Configuration["Services:CandidateApi"]!));
+        client.BaseAddress = new Uri(builder.Configuration["Services:CandidateApi"]!))
+    .AddMicrosoftIdentityUserAuthenticationHandler(
+        "CandidateApi", builder.Configuration.GetSection("DownstreamApis:CandidateApi"));
 builder.Services.AddHttpClient<IJobClient, JobClient>(client =>
-    client.BaseAddress = new Uri(builder.Configuration["Services:JobApi"]!));
+        client.BaseAddress = new Uri(builder.Configuration["Services:JobApi"]!))
+    .AddMicrosoftIdentityUserAuthenticationHandler(
+        "JobApi", builder.Configuration.GetSection("DownstreamApis:JobApi"));
 
 var app = builder.Build();
 
+// CORS first, so browser preflight requests (which never carry a token) get answered.
 app.UseCors();
-app.MapOpenApi();
-app.MapScalarApiReference(); // interactive API docs at /scalar/v1
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Docs and the health probe stay public; everything else is protected (fallback policy).
+app.MapOpenApi().AllowAnonymous();
+app.MapScalarApiReference().AllowAnonymous(); // interactive API docs at /scalar/v1
 app.MapApplicationEndpoints();
-app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "application-service" }));
+app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "application-service" })).AllowAnonymous();
 
 await CosmosInitializer.EnsureCreatedAsync(
     app.Services.GetRequiredService<CosmosClient>(),
