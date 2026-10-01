@@ -102,6 +102,29 @@ npm run dev                                   # :5173
 The `.http` files in each service folder (e.g. `src/CandidateService/CandidateService.http`)
 contain ready-made requests you can send from VS Code (REST Client) or Rider/VS.
 
+## Resilience of the synchronous calls
+
+ApplicationService calls CandidateService and JobService on every submit. Each
+typed client gets its **own** resilience pipeline (`Program.cs`,
+`Clients/DependencyResilience.cs`), so one failing dependency can't affect the other:
+
+```
+bulkhead (20 in flight) -> total timeout (60 s) -> retry (3, backoff, GETs only)
+  -> circuit breaker (opens at 50% failures over >= 5 calls, 15 s) -> attempt timeout (25 s) -> HTTP
+```
+
+The clients only decide what a result *means* (`Clients/DependencyCall.cs`): a
+404 is "doesn't exist" (400 to the user); an open circuit, full bulkhead, timeout,
+connection error or a 5xx that survived the retries is "unavailable" — a **503**
+with the dependency's name, which the web UI shows as-is.
+
+Try it with Docker Compose: submit an application, `docker compose stop
+candidate-service`, submit again — the first attempt fails after the retries
+(~15 s), the next ones in milliseconds (circuit open). `docker compose start
+candidate-service`, wait 15 s, and submitting works again (half-open -> closed).
+`docker compose logs application-service` shows the `OnRetry` /
+`OnCircuitOpened` / `OnCircuitHalfOpened` / `OnCircuitClosed` events.
+
 ## Running the tests
 
 ```bash

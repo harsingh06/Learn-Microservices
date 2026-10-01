@@ -31,7 +31,7 @@ public static class ApplicationEndpoints
         return application is null ? TypedResults.NotFound() : TypedResults.Ok(application);
     }
 
-    public static async Task<Results<Created<JobApplication>, BadRequest<string>, Conflict<string>>> Submit(
+    public static async Task<Results<Created<JobApplication>, BadRequest<string>, Conflict<string>, ProblemHttpResult>> Submit(
         SubmitApplicationRequest request,
         IApplicationRepository repository,
         ICandidateClient candidateClient,
@@ -45,13 +45,27 @@ public static class ApplicationEndpoints
         // Synchronous existence checks against the owning services. This couples
         // availability (can't apply if CandidateService is down) — accepted for Phase 1;
         // the alternative is an event-fed local read model, tracked in the backlog.
-        var candidate = await candidateClient.GetAsync(request.CandidateId);
-        if (candidate is null)
-            return TypedResults.BadRequest($"Candidate '{request.CandidateId}' does not exist.");
+        // The clients' resilience pipelines absorb blips; what's left is either "doesn't
+        // exist" (400) or "couldn't be checked right now" (503 — retrying can succeed).
+        CandidateSummary? candidate;
+        JobSummary? job;
+        try
+        {
+            candidate = await candidateClient.GetAsync(request.CandidateId);
+            if (candidate is null)
+                return TypedResults.BadRequest($"Candidate '{request.CandidateId}' does not exist.");
 
-        var job = await jobClient.GetAsync(request.JobId);
-        if (job is null)
-            return TypedResults.BadRequest($"Job '{request.JobId}' does not exist.");
+            job = await jobClient.GetAsync(request.JobId);
+            if (job is null)
+                return TypedResults.BadRequest($"Job '{request.JobId}' does not exist.");
+        }
+        catch (DependencyUnavailableException ex)
+        {
+            return TypedResults.Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: $"{ex.Dependency} is temporarily unavailable",
+                detail: "The application wasn't submitted. Please retry in a few seconds.");
+        }
 
         var existing = await repository.FindByCandidateAndJobAsync(request.CandidateId, request.JobId);
         if (existing is not null)

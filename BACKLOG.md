@@ -114,7 +114,19 @@ Each item notes *why* it was deferred so we remember the trade-off we accepted.
 
 ## Phase 5 — Production hardening
 
-- [ ] Resiliency on sync calls (timeouts, retries, circuit breaker via `Microsoft.Extensions.Http.Resilience`).
+- [x] **Resiliency on sync calls** (`Microsoft.Extensions.Http.Resilience`): each of
+      ApplicationService's clients has its own pipeline — bulkhead (20 in flight),
+      total/attempt timeouts sized for cold starts (60 s / 25 s), retry with backoff
+      (GETs only), circuit breaker tuned for low traffic (5 calls, 50%, 15 s break).
+      An unreachable dependency is a 503, never "does not exist". Policy:
+      `Clients/DependencyResilience.cs`; meaning of results: `Clients/DependencyCall.cs`.
+  - [ ] Health checks wired into ACA probes, so a replica that can't serve is
+        taken out before callers' breakers have to notice.
+  - [ ] `min_replicas = 1` for synchronously-called services if the first-call
+        latency after idle (cold start + retries: up to ~20 s) matters.
+  - [ ] Platform resiliency (ACA policies / mesh) only as a thin safety net —
+        connection timeouts, pool limits, TCP connect retries — never HTTP
+        retries, or retries multiply with the ones in code.
 - [ ] Idempotent event consumers (at-least-once delivery means duplicates).
 - [ ] Observability: OpenTelemetry traces across service boundaries, health checks wired
       into orchestrator probes.

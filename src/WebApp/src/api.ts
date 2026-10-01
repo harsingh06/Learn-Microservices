@@ -20,16 +20,24 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
-// The APIs return error details as a JSON string ("...") for 400/409.
+// The APIs return error details as a JSON string ("...") for 400/409, and as
+// RFC 7807 problem details ({ title, detail }) for 503 — e.g. "CandidateService
+// is temporarily unavailable" when a dependency can't be reached.
 async function readErrorMessage(response: Response): Promise<string> {
   const text = await response.text()
   if (!text) return `Request failed with status ${response.status}`
   try {
     const parsed: unknown = JSON.parse(text)
-    return typeof parsed === 'string' ? parsed : text
+    if (typeof parsed === 'string') return parsed
+    if (isProblem(parsed)) return [parsed.title, parsed.detail].filter(Boolean).join('. ')
+    return text
   } catch {
     return text
   }
+}
+
+function isProblem(value: unknown): value is { title?: string; detail?: string } {
+  return typeof value === 'object' && value !== null && ('title' in value || 'detail' in value)
 }
 
 function post<T>(url: string, body: unknown): Promise<T> {

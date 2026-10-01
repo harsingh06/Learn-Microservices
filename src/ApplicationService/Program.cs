@@ -32,10 +32,15 @@ builder.Services.AddSingleton(sp =>
 builder.Services.AddSingleton<IApplicationRepository, CosmosApplicationRepository>();
 
 // Typed HTTP clients for the sync existence checks against the owning services.
+// Each gets its OWN resilience pipeline (bulkhead, timeouts, retry, circuit
+// breaker — see DependencyResilience), so one failing dependency can't affect
+// calls to the other.
 builder.Services.AddHttpClient<ICandidateClient, CandidateClient>(client =>
-    client.BaseAddress = new Uri(builder.Configuration["Services:CandidateApi"]!));
+        client.BaseAddress = new Uri(builder.Configuration["Services:CandidateApi"]!))
+    .AddStandardResilienceHandler(DependencyResilience.Configure);
 builder.Services.AddHttpClient<IJobClient, JobClient>(client =>
-    client.BaseAddress = new Uri(builder.Configuration["Services:JobApi"]!));
+        client.BaseAddress = new Uri(builder.Configuration["Services:JobApi"]!))
+    .AddStandardResilienceHandler(DependencyResilience.Configure);
 
 var app = builder.Build();
 

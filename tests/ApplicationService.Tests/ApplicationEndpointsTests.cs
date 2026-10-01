@@ -13,7 +13,7 @@ public class ApplicationEndpointsTests
     private readonly ICandidateClient _candidateClient = Substitute.For<ICandidateClient>();
     private readonly IJobClient _jobClient = Substitute.For<IJobClient>();
 
-    private Task<Results<Created<JobApplication>, BadRequest<string>, Conflict<string>>> Submit(
+    private Task<Results<Created<JobApplication>, BadRequest<string>, Conflict<string>, ProblemHttpResult>> Submit(
         string candidateId = "c1", string jobId = "j1") =>
         ApplicationEndpoints.Submit(new SubmitApplicationRequest(candidateId, jobId), _repository, _candidateClient, _jobClient);
 
@@ -55,6 +55,35 @@ public class ApplicationEndpointsTests
 
         var badRequest = Assert.IsType<BadRequest<string>>(result.Result);
         Assert.Contains("Job", badRequest.Value);
+        await _repository.DidNotReceive().AddAsync(Arg.Any<JobApplication>());
+    }
+
+    [Fact]
+    public async Task Submit_WhenCandidateServiceUnavailable_Returns503WithoutSaving()
+    {
+        _candidateClient.GetAsync("c1").Returns<CandidateSummary?>(_ =>
+            throw new DependencyUnavailableException("CandidateService", new HttpRequestException()));
+
+        var result = await Submit();
+
+        var problem = Assert.IsType<ProblemHttpResult>(result.Result);
+        Assert.Equal(503, problem.StatusCode);
+        Assert.Contains("CandidateService", problem.ProblemDetails.Title);
+        await _repository.DidNotReceive().AddAsync(Arg.Any<JobApplication>());
+    }
+
+    [Fact]
+    public async Task Submit_WhenJobServiceUnavailable_Returns503WithoutSaving()
+    {
+        _candidateClient.GetAsync("c1").Returns(new CandidateSummary("c1", "Ada"));
+        _jobClient.GetAsync("j1").Returns<JobSummary?>(_ =>
+            throw new DependencyUnavailableException("JobService", new HttpRequestException()));
+
+        var result = await Submit();
+
+        var problem = Assert.IsType<ProblemHttpResult>(result.Result);
+        Assert.Equal(503, problem.StatusCode);
+        Assert.Contains("JobService", problem.ProblemDetails.Title);
         await _repository.DidNotReceive().AddAsync(Arg.Any<JobApplication>());
     }
 
