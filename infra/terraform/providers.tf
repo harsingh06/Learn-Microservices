@@ -4,7 +4,7 @@ terraform {
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~> 4.0"
+      version = "~> 5.7"
     }
     # No longer used (names are deterministic now). Kept for ONE apply so the old
     # random_string in state can be destroyed — remove afterwards.
